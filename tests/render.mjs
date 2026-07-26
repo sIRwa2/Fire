@@ -165,6 +165,10 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
       unlocked.every((b) => transparent(b.border)), JSON.stringify(unlocked.map((b) => b.border)));
     check(`${label}: header buttons have no focus ring`,
       unlocked.every((b) => b.outline === 'none'), JSON.stringify(unlocked.map((b) => b.outline)));
+    // Transparent rather than a copy of the page colour, so it keeps following
+    // the theme instead of going stale against it.
+    check(`${label}: header buttons show the page background`,
+      unlocked.every((b) => transparent(b.bg)), JSON.stringify(unlocked.map((b) => b.bg)));
 
     await page.click('.hdr-actions button[title="Lock layout"]');
     await page.waitForTimeout(400);

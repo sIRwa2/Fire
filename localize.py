@@ -149,9 +149,32 @@ ADD_BUTTON_CSS = (
 # solid accent plate reads more clearly than the 1px border ever did.
 #
 # outline goes too, for the same reason as the add buttons: these get clicked, and
-# the focus ring would sit on them afterwards. Backgrounds are deliberately left
-# alone — removing lockBg would cost the locked state its main signal.
-HDR_BUTTON_CSS = ".hdr-actions button{border-color:transparent!important;outline:none!important}"
+# the focus ring would sit on them afterwards.
+#
+# The backgrounds become `transparent` rather than a copy of the page colour, so
+# they show whatever is behind them and keep following it when the theme changes.
+# There is no --bg custom property to reference: applyTheme() assigns
+# document.body.style.background directly and only publishes --accent.
+#
+# The locked state is the exception. It is the one place the background is load
+# bearing — with the border gone, lockBg's accent plate is the whole signal — so
+# it is restored explicitly for the locked button. That is keyed on the title,
+# since the locked and unlocked buttons are otherwise identical in the markup;
+# LOCK_TITLE_PREFIX is asserted so a re-export that rewords it fails here rather
+# than silently flattening the indicator.
+#
+# The settings button's hover tint survives on purpose: its generated
+# .scpN:hover rule is (0,2,0) against this rule's (0,1,1), so it still wins and
+# the button keeps showing that it is interactive.
+LOCK_TITLE_PREFIX = "Layout locked"
+HDR_BUTTON_CSS = (
+    ".hdr-actions button{"
+    "border-color:transparent!important;"
+    "outline:none!important;"
+    "background:transparent!important}"
+    '.hdr-actions button[title^="' + LOCK_TITLE_PREFIX + '"]'
+    "{background:var(--accent)!important}"
+)
 
 # The dashed outline was the only thing marking the buttons out, so with it gone
 # they need to be reachable. Kept to the empty dashboard: once apps exist,
@@ -342,6 +365,14 @@ def patch_template(html: str) -> str:
     # HDR_BUTTON_CSS relies on the two header buttons living in .hdr-actions.
     if 'class=\\"hdr-actions' not in body:
         raise ValueError("no hdr-actions container; HDR_BUTTON_CSS would be inert")
+
+    # ...and on the locked button's title, which is how the accent plate is kept
+    # for the one state where the background carries meaning.
+    if "'%s" % LOCK_TITLE_PREFIX not in body:
+        raise ValueError(
+            "lock title no longer starts with %r; the locked-state background "
+            "would be flattened along with the rest" % LOCK_TITLE_PREFIX
+        )
 
     n = body.count("<head>")
     if n != 1:

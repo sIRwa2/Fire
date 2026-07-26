@@ -149,12 +149,20 @@ print("ok    add-button styling unconditional, hover reveal made robust")
 # than the render-order .scp0/.scp1 classes.
 assert 'class=\\"hdr-actions' in tpl or 'class="hdr-actions' in tpl, \
     "hdr-actions container is gone"
-assert ".hdr-actions button{border-color:transparent!important;outline:none!important}" in tpl, \
-    "header button CSS missing"
-# The lock border was a locked-state signal; lockBg has to still carry that.
+for decl in ("border-color:transparent!important", "outline:none!important",
+             "background:transparent!important"):
+    assert ".hdr-actions button{" in tpl and decl in tpl, \
+        "header button CSS missing: %s" % decl
+# The locked button keeps its accent plate, keyed on the title. Both halves have
+# to hold or the locked state ends up with no indicator at all, since its border
+# is gone too.
+assert '.hdr-actions button[title^="Layout locked"]{background:var(--accent)!important}' in tpl, \
+    "locked-state background is flattened along with the rest"
+assert "lockTitle: s.locked ? 'Layout locked" in tpl, \
+    "lock title reworded; the locked-state selector would no longer match"
 assert "lockBg: s.locked ? 'var(--accent)'" in tpl, \
     "lockBg no longer marks the locked state, which the border used to"
-print("ok    header lock/settings buttons flattened")
+print("ok    header lock/settings buttons flattened, locked state preserved")
 
 # The picker tiles are targeted by data-icon, not by the runtime-generated .scpx
 # class, whose base36 suffix moves whenever render order changes.

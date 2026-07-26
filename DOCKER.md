@@ -123,8 +123,23 @@ the only one: when locked, `lockBg` becomes `var(--accent)` and `lockColor` flip
 to a dark glyph, the icon swaps to a closed padlock, and the tooltip changes. A
 solid accent plate reads more clearly than the 1px border did.
 
-Backgrounds are deliberately left alone here — removing `lockBg` would cost the
-locked state its main signal.
+Their backgrounds are set to `transparent` rather than to a copy of the page
+colour, so they show whatever is behind them and keep following it when the theme
+changes. There is no `--bg` custom property to reference — `applyTheme()` assigns
+`document.body.style.background` directly and only publishes `--accent`.
+
+The locked state is the exception, and it is the one place the background is load
+bearing: with the border gone, `lockBg`'s accent plate is the whole signal. It is
+restored explicitly for the locked button, keyed on the title, since locked and
+unlocked are otherwise identical in the markup. Because that restores
+`var(--accent)` rather than a literal colour, it tracks the theme too — accent
+green by default, amber under Ayu. `localize.py` asserts the title still starts
+with `Layout locked`, so a re-export that rewords it fails the build instead of
+quietly flattening the indicator.
+
+The settings button's hover tint survives on purpose: its generated
+`.scpN:hover` rule is (0,2,0) against this rule's (0,1,1), so it still wins and
+the button keeps showing that it is interactive.
 
 `HOVER_FALLBACK_CSS` makes the reveal survive an old browser. The page writes
 
