@@ -29,6 +29,14 @@ check() {
 
 code() { curl -s -o /dev/null -w '%{http_code}' "$BASE$1"; }
 
+# Occurrences of a pattern in a file inside a running container.
+# grep -c prints its count but exits 1 when that count is zero, so the pipeline
+# swallows the status — a `|| echo 0` fallback would append a second line and
+# turn a legitimate 0 into "0\n0". Empty output means the exec itself failed.
+count_in() {
+    $COMPOSE exec -T "$1" grep -c "$2" "$3" 2>/dev/null | tr -d '\r' | head -1
+}
+
 echo "== containers =="
 if have docker; then
     for svc in firehome api; do
@@ -50,9 +58,11 @@ if have docker; then
     check "nginx config is valid" "0" \
         "$($COMPOSE exec -T firehome nginx -t >/dev/null 2>&1; echo $?)"
     check "storage shim is in the served page" "1" \
-        "$($COMPOSE exec -T firehome grep -c fireHomeStorage /usr/share/nginx/html/index.html 2>/dev/null || echo 0)"
+        "$(count_in firehome fireHomeStorage /usr/share/nginx/html/index.html)"
     check "no CDN reference in the served page" "0" \
-        "$($COMPOSE exec -T firehome grep -c jsdelivr /usr/share/nginx/html/index.html 2>/dev/null || echo 0)"
+        "$(count_in firehome jsdelivr /usr/share/nginx/html/index.html)"
+    check "page-wrap layout CSS is in the served page" "1" \
+        "$(count_in firehome 'width:90%!important' /usr/share/nginx/html/index.html)"
     icons=$($COMPOSE exec -T firehome sh -c 'ls /usr/share/nginx/html/icons | wc -l' 2>/dev/null | tr -d ' \r')
     if [ "$icons" -gt 3000 ] 2>/dev/null; then
         ok "icon set present ($icons files)"
