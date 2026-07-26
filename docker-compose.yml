@@ -1,4 +1,6 @@
 services:
+  # Kept as "firehome" rather than renamed to "web": the container_name is
+  # already taken by the running deployment, and a rename would collide.
   firehome:
     build: .
     image: firehome:local
@@ -10,6 +12,9 @@ services:
       # to 127.0.0.1 for this host only. nginx additionally rejects any client
       # outside RFC1918 / loopback — see nginx.conf.
       - "${FIREHOME_BIND:-0.0.0.0}:${FIREHOME_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
     healthcheck:
@@ -18,3 +23,23 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
+
+  # Server-side config store. Not published — only nginx talks to it, via
+  # /api/ on the compose network.
+  api:
+    build: ./api
+    image: firehome-api:local
+    container_name: firehome-api
+    restart: unless-stopped
+    volumes:
+      - firehome-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+
+volumes:
+  firehome-data:

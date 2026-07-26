@@ -1,0 +1,19 @@
+FROM python:3.12-alpine
+
+# Fresh named volumes inherit the ownership of the image's directory, so /data
+# is created and chowned here to let the service run unprivileged.
+RUN adduser -D -u 10001 app \
+    && mkdir -p /data \
+    && chown -R app:app /data
+
+COPY server.py /app/server.py
+
+USER app
+ENV FIREHOME_DATA=/data FIREHOME_API_PORT=8080 PYTHONUNBUFFERED=1
+EXPOSE 8080
+VOLUME ["/data"]
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).status==200 else 1)"
+
+CMD ["python", "/app/server.py"]
