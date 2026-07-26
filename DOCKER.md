@@ -110,6 +110,22 @@ grid row with real cards and a top margin would knock it out of alignment.
 empty list leaves the button as the only child — that is what makes `:only-child`
 identify the empty case exactly.
 
+### The header lock and settings buttons
+
+`HDR_BUTTON_CSS` clears their border and focus ring via `.hdr-actions button`,
+which holds exactly those two — the `sc-if` pair inside the lock button only swaps
+the padlock glyph. Targeted that way rather than by the `.scp0` / `.scp1` classes
+devtools shows, which are generated in render order and move.
+
+The lock button's border was one of its locked-state signals
+(`lockBorder: s.locked ? 'var(--accent)' : 'rgba(255,255,255,.1)'`) but far from
+the only one: when locked, `lockBg` becomes `var(--accent)` and `lockColor` flips
+to a dark glyph, the icon swaps to a closed padlock, and the tooltip changes. A
+solid accent plate reads more clearly than the 1px border did.
+
+Backgrounds are deliberately left alone here — removing `lockBg` would cost the
+locked state its main signal.
+
 `HOVER_FALLBACK_CSS` makes the reveal survive an old browser. The page writes
 
 ```css

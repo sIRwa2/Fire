@@ -145,6 +145,17 @@ assert ".app-grid:hover .add-app{opacity:1}" in tpl, "hover fallback missing"
 assert "@supports not selector(:focus-visible)" in tpl, "focus-visible fallback missing"
 print("ok    add-button styling unconditional, hover reveal made robust")
 
+# The header's lock and settings buttons, reached through .hdr-actions rather
+# than the render-order .scp0/.scp1 classes.
+assert 'class=\\"hdr-actions' in tpl or 'class="hdr-actions' in tpl, \
+    "hdr-actions container is gone"
+assert ".hdr-actions button{border-color:transparent!important;outline:none!important}" in tpl, \
+    "header button CSS missing"
+# The lock border was a locked-state signal; lockBg has to still carry that.
+assert "lockBg: s.locked ? 'var(--accent)'" in tpl, \
+    "lockBg no longer marks the locked state, which the border used to"
+print("ok    header lock/settings buttons flattened")
+
 # The picker tiles are targeted by data-icon, not by the runtime-generated .scpx
 # class, whose base36 suffix moves whenever render order changes.
 assert 'data-icon="{{ ic.name }}"' in tpl, "icon tiles lost the data-icon hook"

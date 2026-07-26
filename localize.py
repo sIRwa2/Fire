@@ -137,6 +137,22 @@ ADD_BUTTON_CSS = (
     ".add-app span,.new-cat span{background:none!important}"
 )
 
+# The header's lock and settings buttons. .hdr-actions holds exactly those two —
+# the sc-if pair inside the lock button only swaps the padlock glyph — so this
+# matches them and nothing else. Targeted that way rather than by the .scp0 /
+# .scp1 classes devtools shows, which are generated in render order and move.
+#
+# The lock button's border is one of its locked-state signals
+# (lockBorder: s.locked ? 'var(--accent)' : 'rgba(255,255,255,.1)'), but far from
+# the only one: when locked, lockBg becomes var(--accent) and lockColor flips to
+# a dark glyph, the icon swaps to a closed padlock and the tooltip changes. A
+# solid accent plate reads more clearly than the 1px border ever did.
+#
+# outline goes too, for the same reason as the add buttons: these get clicked, and
+# the focus ring would sit on them afterwards. Backgrounds are deliberately left
+# alone — removing lockBg would cost the locked state its main signal.
+HDR_BUTTON_CSS = ".hdr-actions button{border-color:transparent!important;outline:none!important}"
+
 # The dashed outline was the only thing marking the buttons out, so with it gone
 # they need to be reachable. Kept to the empty dashboard: once apps exist,
 # .add-app is a grid item sharing a row with real cards, and a top margin would
@@ -300,7 +316,7 @@ def patch_template(html: str) -> str:
     tag = (
         HEAD_MARKUP
         + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + ADD_BUTTON_CSS
-        + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
+        + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
         + ICON_TILE_CSS + TOUCH_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
     )
@@ -322,6 +338,10 @@ def patch_template(html: str) -> str:
     header_at = body.find("<header")
     if header_at < 0 or header_at < wrap_at:
         raise ValueError("no <header> inside page-wrap; HEADER_CSS would be inert")
+
+    # HDR_BUTTON_CSS relies on the two header buttons living in .hdr-actions.
+    if 'class=\\"hdr-actions' not in body:
+        raise ValueError("no hdr-actions container; HDR_BUTTON_CSS would be inert")
 
     n = body.count("<head>")
     if n != 1:

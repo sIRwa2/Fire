@@ -149,6 +149,31 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     );
     check(`${label}: no focus ring after a mouse click`, ringOnClick === 'none', ringOnClick);
     check(`${label}: no focus ring after a key press`, ringAfterKey === 'none', ringAfterKey);
+
+    // The header's lock and settings buttons, flat in both lock states. The lock
+    // border used to be a locked-state signal, so assert the accent plate that
+    // now carries that job on its own is still there.
+    const hdr = () => page.evaluate(() =>
+      [...document.querySelectorAll('.hdr-actions button')].map((el) => {
+        const c = getComputedStyle(el);
+        return { title: el.title, border: c.borderTopColor, outline: c.outlineStyle,
+                 bg: c.backgroundColor };
+      }));
+    const unlocked = await hdr();
+    check(`${label}: two header buttons found`, unlocked.length === 2, unlocked.length);
+    check(`${label}: header buttons have no border`,
+      unlocked.every((b) => transparent(b.border)), JSON.stringify(unlocked.map((b) => b.border)));
+    check(`${label}: header buttons have no focus ring`,
+      unlocked.every((b) => b.outline === 'none'), JSON.stringify(unlocked.map((b) => b.outline)));
+
+    await page.click('.hdr-actions button[title="Lock layout"]');
+    await page.waitForTimeout(400);
+    const locked = await hdr();
+    const lockBtn = locked.find((b) => /locked/i.test(b.title));
+    check(`${label}: lock button stays borderless when locked`,
+      !!lockBtn && transparent(lockBtn.border), lockBtn && lockBtn.border);
+    check(`${label}: locked state still marked by the accent plate`,
+      !!lockBtn && lockBtn.bg === 'rgb(148, 204, 138)', lockBtn && lockBtn.bg);
     check(`${label}: no external requests`, external.length === 0, external[0]);
     check(`${label}: no failed requests`, broken.length === 0, broken[0]);
     if (populated) {
