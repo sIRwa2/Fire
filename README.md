@@ -88,7 +88,9 @@ outright would leave an unlabelled box.
 ## Updating the icon set
 
 **Settings → Icons → Check for updates** pulls new and changed icons from
-[homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons).
+[homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons),
+including the **690 icons that exist only as webp or png** upstream and so were
+previously unreachable — searching for `adblock` or `9anime` now finds them.
 Tracks `main`, runs only when you click, and lands in a volume that sits in front
 of the set baked into the image — so `docker compose down -v` reverts to the
 shipped icons. This is the only thing in the stack that reaches the internet, and

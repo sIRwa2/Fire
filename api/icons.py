@@ -23,6 +23,7 @@ no background polling, so the container makes no outbound request during normal
 page loads.
 """
 
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -37,15 +38,32 @@ REPO = "homarr-labs/dashboard-icons"
 BRANCH = "main"
 TREE_URL = "https://api.github.com/repos/%s/git/trees/%s?recursive=1" % (REPO, BRANCH)
 COMMIT_URL = "https://api.github.com/repos/%s/commits/%s" % (REPO, BRANCH)
-RAW_URL = "https://raw.githubusercontent.com/%s/%s/svg/" % (REPO, BRANCH)
+RAW_URL = "https://raw.githubusercontent.com/%s/%s/" % (REPO, BRANCH)
+
+# Preference order. svg is wanted wherever it exists — it scales and is tiny —
+# but 690 of the ~3900 icons upstream have no svg at all, so those fall back to a
+# raster. webp before png because it is markedly smaller: taking webp where it
+# exists makes the svg-less set 28 MB instead of 263 MB for every variant.
+FORMATS = ("svg", "webp", "png")
 
 # Names come from a third party and are used to build file paths, so they are
 # restricted to a flat, boring shape: no separators, no leading dot, no traversal.
-NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.svg$")
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:svg|webp|png)$")
 
-MAX_ICON_BYTES = 512 * 1024
+# Raised past 512 KB because one real icon (napcat.webp, 661 KB) exceeded it.
+MAX_ICON_BYTES = 1024 * 1024
 MAX_DOWNLOADS = 6000        # backstop against a malformed tree response
 HTTP_TIMEOUT = 30
+# The first run after adding raster fallbacks fetches ~690 files. Sequentially
+# that is about five minutes of a progress counter crawling, which reads as a
+# hang; eight at a time brings it under a minute and is undemanding of the CDN.
+DOWNLOAD_WORKERS = 4
+# Transient failures are normal at this fan-out — the first parallel run lost 192
+# of 690 files to "Temporary failure in name resolution", not to any HTTP error,
+# because the threads outpaced the DNS resolver. Retrying with backoff turns that
+# into a delay rather than 192 silently missing icons.
+RETRIES = 4
+RETRY_BACKOFF = 0.6
 USER_AGENT = "firehome-icon-updater"
 
 
@@ -81,9 +99,21 @@ class IconStore:
         return [n for n in names if NAME_RE.match(n)]
 
     def names(self):
-        """Icon names (no extension) the dashboard can offer, overlay included."""
-        both = set(self._scan(self.baked)) | set(self._scan(self.overlay))
-        return sorted(n[:-4] for n in both)
+        """What the dashboard can offer, overlay included.
+
+        An svg is named bare ("plex") so existing config keeps working and the
+        page's iconUrl can append .svg as it always has. A raster keeps its
+        extension ("adblock.webp"), which iconUrl passes through untouched — the
+        extension has to survive into the URL so the response carries the right
+        content type.
+        """
+        out = {}
+        for name in set(self._scan(self.baked)) | set(self._scan(self.overlay)):
+            stem, _, ext = name.rpartition(".")
+            # svg wins if both exist, matching the download preference.
+            if ext == "svg" or stem not in out:
+                out[stem] = stem if ext == "svg" else name
+        return sorted(out.values())
 
     def local_shas(self):
         """filename -> blob sha, overlay shadowing baked."""
@@ -131,14 +161,31 @@ class IconStore:
             return True
 
     def _get(self, url, timeout=HTTP_TIMEOUT, limit=None):
-        req = urllib.request.Request(url, headers=_headers())
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            if limit is not None:
-                data = resp.read(limit + 1)
-                if len(data) > limit:
-                    raise ValueError("response larger than %d bytes" % limit)
-                return data
-            return resp.read()
+        """Fetch a URL, retrying transient failures with a backoff.
+
+        Retries name-resolution and connection errors, timeouts, 429s and 5xxs.
+        A 404 or a body over the cap is final — repeating those just wastes time.
+        """
+        last = None
+        for attempt in range(RETRIES):
+            try:
+                req = urllib.request.Request(url, headers=_headers())
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    if limit is None:
+                        return resp.read()
+                    data = resp.read(limit + 1)
+                    if len(data) > limit:
+                        raise ValueError("response larger than %d bytes" % limit)
+                    return data
+            except urllib.error.HTTPError as exc:
+                if exc.code != 429 and exc.code < 500:
+                    raise
+                last = exc
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                last = exc
+            if attempt < RETRIES - 1:
+                time.sleep(RETRY_BACKOFF * (2 ** attempt))
+        raise last
 
     def _run(self):
         started = time.time()
@@ -155,19 +202,32 @@ class IconStore:
             if tree.get("truncated"):
                 raise ValueError("GitHub truncated the tree listing")
 
-            upstream = {}
+            # One entry per icon: the best available format, so a name with an
+            # svg is never also fetched as a raster.
+            best = {}
             for entry in tree.get("tree", []):
                 path = entry.get("path", "")
-                if not path.startswith("svg/") or path.count("/") != 1:
+                if entry.get("type") != "blob" or path.count("/") != 1:
                     continue
-                name = path[4:]
-                if NAME_RE.match(name):
-                    upstream[name] = entry.get("sha", "")
+                directory, _, name = path.partition("/")
+                if directory not in FORMATS or not NAME_RE.match(name):
+                    continue
+                stem, _, ext = name.rpartition(".")
+                if ext != directory:          # png/foo.svg and friends
+                    continue
+                rank = FORMATS.index(ext)
+                if stem not in best or rank < best[stem][0]:
+                    best[stem] = (rank, name, path, entry.get("sha", ""))
+            upstream = {name: (path, sha) for _, name, path, sha in best.values()}
             if not upstream:
                 raise ValueError("no icons found in the upstream tree")
+            result["formats"] = {
+                fmt: sum(1 for n in upstream if n.endswith("." + fmt))
+                for fmt in FORMATS
+            }
 
             local = self.local_shas()
-            todo = [n for n, sha in upstream.items() if local.get(n) != sha]
+            todo = [n for n, (_, sha) in upstream.items() if local.get(n) != sha]
             result["upstream"] = len(upstream)
             result["attempted"] = len(todo)
 
@@ -180,22 +240,34 @@ class IconStore:
             # Counted as each file lands, not up front from the size of `todo`:
             # these numbers are reported to the user as what happened, and a run
             # whose downloads all failed must not claim it updated anything.
-            added = changed = 0
+            added = changed = done = 0
             failed = []
-            for i, name in enumerate(sorted(todo), 1):
-                self._progress["phase"] = "downloading %d/%d" % (i, len(todo))
-                try:
-                    data = self._get(RAW_URL + name, limit=MAX_ICON_BYTES)
-                    if blob_sha(data) != upstream[name]:
-                        raise ValueError("checksum mismatch")
-                    self._write(name, data)
-                    if name in local:
-                        changed += 1
-                    else:
-                        added += 1
-                except Exception as exc:
-                    failed.append(name)
-                    self.log("icons: %s failed: %r" % (name, exc))
+            counters = threading.Lock()
+            total = len(todo)
+
+            def fetch(name):
+                path, sha = upstream[name]
+                data = self._get(RAW_URL + path, limit=MAX_ICON_BYTES)
+                if blob_sha(data) != sha:
+                    raise ValueError("checksum mismatch")
+                self._write(name, data)
+
+            with concurrent.futures.ThreadPoolExecutor(DOWNLOAD_WORKERS) as pool:
+                futures = {pool.submit(fetch, n): n for n in sorted(todo)}
+                for future in concurrent.futures.as_completed(futures):
+                    name = futures[future]
+                    with counters:
+                        done += 1
+                        try:
+                            future.result()
+                            if name in local:
+                                changed += 1
+                            else:
+                                added += 1
+                        except Exception as exc:
+                            failed.append(name)
+                            self.log("icons: %s failed: %r" % (name, exc))
+                        self._progress["phase"] = "downloading %d/%d" % (done, total)
 
             result["new"] = added
             result["changed"] = changed

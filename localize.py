@@ -225,12 +225,22 @@ HOVER_FALLBACK_CSS = (
 # first still pre-filters the grid, and editing an existing app is unchanged.
 JS_PATCHES = (
     (
+        # 690 upstream icons have no svg and arrive as webp or png, named with
+        # their extension. iconUrl has to pass that through rather than appending
+        # .svg — the extension is what gives the response its content type.
+        "iconUrl passes a raster extension through",
+        "    return '/icons/' + name + '.svg';",
+        "    return '/icons/' + name"
+        " + (/\\\\.(svg|webp|png)$/i.test(name) ? '' : '.svg');",
+    ),
+    (
         "pickIcon suggests a title",
         "  pickIcon = (e) => this.setState({ modal: { ...this.state.modal,"
         " icon: e.currentTarget.dataset.icon } });",
         "  pickIcon = (e) => {\\n"
         "    const icon = e.currentTarget.dataset.icon;\\n"
-        "    const suggestion = icon.replace(/-(light|dark)$/, '').split(/[-_]+/)\\n"
+        "    const suggestion = icon.replace(/\\\\.(svg|webp|png)$/i, '')\\n"
+        "      .replace(/-(light|dark)$/, '').split(/[-_]+/)\\n"
         "      .filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');\\n"
         "    this.setState(s => {\\n"
         "      const m = s.modal;\\n"

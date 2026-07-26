@@ -369,6 +369,31 @@ the real directories, with the baked list kept as the fallback for when the
 service is unreachable — which both fixes that mismatch and is what lets an
 update appear without rebuilding the image.
 
+**690 icons upstream have no svg at all.** The repo carries `svg/` (3232),
+`png/` (3913) and `webp/` (3905), and 690 names — `adblock`, `9anime`, `alarmpi`,
+`adsb` … — exist only as rasters. They were simply unreachable before. The updater
+now takes the best available format per name in the order svg → webp → png, so an
+icon with an svg is never also fetched as a raster, and webp is preferred over png
+because it makes that svg-less set **28 MB instead of 263 MB** for every variant.
+
+An svg is offered under its bare name (`plex`), so existing config keeps working
+and `iconUrl` appends `.svg` as it always has. A raster keeps its extension
+(`adblock.webp`), which `iconUrl` passes straight through — the extension has to
+survive into the URL for the response to carry the right content type. The title
+suggestion strips it, so picking `adblock.webp` still suggests "Adblock".
+
+There was also a stray `assetgrid.png` sitting in `svg/` all along, invisible
+because the old pattern only matched `.svg`. It is offered now too.
+
+**The first run after this fetches ~690 files.** Downloads run 4 at a time with a
+retrying backoff, which takes well under a minute; subsequent checks are the usual
+no-op. The concurrency and the retries are related: an early 8-worker run lost 192
+of 690 files to `Temporary failure in name resolution` — the threads outpaced the
+DNS resolver, not any HTTP limit — so transient errors, timeouts, 429s and 5xxs
+are now retried with a backoff. Because the diff is by content, a run that ends
+with failures is fully repaired by clicking again: it re-attempts exactly what is
+missing.
+
 **The diff is exact and cheap.** GitHub's tree API returns every path with its
 git blob sha in one request, and a blob sha is just
 `sha1("blob <bytelen>\0" + bytes)`, so the same value can be computed locally and
@@ -381,7 +406,7 @@ Two directories are involved:
 
 | | |
 | --- | --- |
-| `svg/` → `/srv/icons-baked` | read-only bind mount of the repo. Ships with the image, so the full set works with no network access ever. |
+| `svg/` → `/srv/icons-baked` | read-only bind mount of the repo. Ships with the image, so a full icon set works with no network access ever. |
 | `firehome-icons` volume | writable overlay. Updates land here; nginx serves it *in front of* the baked set. |
 
 So an update never mutates the image, and `docker compose down -v` reverts to the

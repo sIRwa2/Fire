@@ -154,6 +154,16 @@ else
 fi
 # The overlay sits in front of the baked set; either source satisfies this.
 check "an icon resolves through the overlay" 200 "$(code /icons/plex.svg)"
+# 690 upstream icons have no svg and arrive as webp, so nginx has to serve that
+# extension with the right type — the page loads them through <img>.
+raster=$(printf '%s' "$icons" | tr ',' '\n' | grep -o '"[^"]*\.webp"' | head -1 | tr -d '"')
+if [ -n "$raster" ]; then
+    check "a webp icon resolves" 200 "$(code "/icons/$raster")"
+    check "a webp icon has the right content type" "image/webp" \
+        "$(curl -s -o /dev/null -w '%{content_type}' "$BASE/icons/$raster")"
+else
+    echo "note  no webp icons installed yet — run Check for updates to fetch them"
+fi
 # nginx constrains the filename shape, so a traversal attempt must not resolve.
 check "traversal in an icon path is refused" 404 "$(code '/icons/..%2Findex.html')"
 if printf '%s' "$icons" | grep -q '"running"'; then

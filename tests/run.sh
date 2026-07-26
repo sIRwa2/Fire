@@ -171,6 +171,12 @@ for needed in ("refreshIcons = () => fetch('/api/icons')", "this.refreshIcons();
                "updateIcons: this.updateIcons,", "{{ iconSummary }}",
                "{{ iconBtnLabel }}", ">Icons</div>"):
     assert needed in tpl, "icon-update patch missing: %s" % needed
+# Rasters carry their extension in the name, so iconUrl must not append .svg to
+# them, and the title suggestion must not turn adblock.webp into "Adblock.webp".
+assert "/\\.(svg|webp|png)$/i.test(name) ? '' : '.svg'" in tpl, \
+    "iconUrl would append .svg to a raster name"
+assert "icon.replace(/\\.(svg|webp|png)$/i, '')" in tpl, \
+    "the title suggestion would keep the file extension"
 # The baked list must survive as the fallback for when the service is unreachable.
 assert 'id="__icons_data"' in tpl, "baked icon list is gone; nothing to fall back to"
 print("ok    icon list served from the api, update button wired")
