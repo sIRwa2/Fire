@@ -13,8 +13,13 @@ things still reach out to the internet at runtime:
 Both are rewritten/removed here so the container never talks to the internet.
 Icons are served from /icons/ by nginx out of the local svg/ directory.
 
-It also injects storage-shim.js, which moves the dashboard's config off
-localStorage and onto the config service. See that file for why.
+It also injects, into the same <head>:
+
+  * storage-shim.js, which moves the dashboard's config off localStorage and
+    onto the config service. See that file for why.
+  * the favicon links and a <title>. The exported template carries neither, so
+    without these the tab shows a blank icon and the bare URL, and the browser
+    probes /favicon.ico on every load.
 
 Each edit asserts its expected hit count: if a future re-export of firehome.html
 changes these strings, the build fails loudly instead of silently shipping a
@@ -41,8 +46,16 @@ TEMPLATE_RE = re.compile(
 PRECONNECT_RE = re.compile(r'<link rel=\\"preconnect\\"[^>]*?>(?:\\n)?')
 
 
-def inject_shim(html: str) -> str:
-    """Insert storage-shim.js into the inner template's <head>.
+HEAD_MARKUP = (
+    "<title>firehome</title>"
+    '<link rel="icon" href="/favicon.svg" type="image/svg+xml">'
+    '<link rel="alternate icon" href="/favicon.png" type="image/png" sizes="32x32">'
+    '<link rel="apple-touch-icon" href="/apple-touch-icon.png">'
+)
+
+
+def inject_head(html: str) -> str:
+    """Insert the title, favicon links and storage-shim.js into the template's <head>.
 
     The template lives as a JSON string inside <script type="__bundler/template">,
     so the injected markup has to carry that string's escaping: JSON escapes for
@@ -50,7 +63,7 @@ def inject_shim(html: str) -> str:
     so a nested </script> cannot terminate the outer tag early.
     """
     shim = open(SHIM_PATH, encoding="utf-8").read()
-    tag = "<script>\n" + shim + "\n</script>"
+    tag = HEAD_MARKUP + "<script>\n" + shim + "\n</script>"
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")
 
     match = TEMPLATE_RE.search(html)
@@ -94,7 +107,7 @@ def main(src: str, dst: str) -> int:
         return 1
 
     try:
-        html = inject_shim(html)
+        html = inject_head(html)
     except ValueError as exc:
         print(f"localize: {exc}", file=sys.stderr)
         return 1

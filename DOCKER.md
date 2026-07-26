@@ -77,25 +77,66 @@ docker compose down -v && docker compose up -d --build
 Useful from the console: `fireHomeStorage.dump()` shows what would be saved,
 `fireHomeStorage.degraded()` reports whether the server is reachable.
 
-## What "local only" means here
+## Verifying a deployment
 
-Three independent layers:
+```sh
+./verify.sh                             # against http://localhost:8080
+BASE=http://192.168.0.108:8080 ./verify.sh
+```
 
-1. **No outbound requests.** The exported bundle already inlines React, the
-   dc-runtime, the Inter fonts and 24 icons. `localize.py` removes what was
-   left: the `cdn.jsdelivr.net` icon fallback (now `/icons/`, served from the
-   local `svg/` set — all 3222 icons the picker offers are present) and two
-   Google Fonts `preconnect` hints. The build fails if either string moves, so
-   a future re-export cannot silently reintroduce a CDN dependency.
-2. **A Content-Security-Policy with no allowlisted hosts** (`nginx.conf`), so
-   the page cannot fetch from the internet regardless. Clicking a tile is a
-   top-level navigation and still works normally.
-3. **nginx rejects any client outside RFC1918 / loopback.** This is a backstop
-   for the compose port binding — a router port-forward still won't expose it.
+Checks container and health state, `nginx -t`, that the shim and icon set made
+it into the image, every served route, and a config write that round-trips
+through the proxy and survives an `api` restart. Non-destructive: the write uses
+a scratch key and removes it afterwards. Docker-dependent checks are skipped
+when `docker` isn't on `PATH`.
 
-Note that the config API is unauthenticated: anyone who can reach the page can
-read and overwrite the dashboard config. That matches a LAN homepage, but it is
-the reason layer 3 exists.
+Two things it can't check, because they need eyes:
+
+- that the dashboard renders and its icons appear
+- that config follows you to a second browser or device
+
+For those: open the page, confirm no amber banner, change something, reload,
+then load the same URL on your phone.
+
+## Self-containment
+
+The exported bundle already inlines React, the dc-runtime, the Inter fonts and
+24 icons. `localize.py` removes what was left: the `cdn.jsdelivr.net` icon
+fallback (now `/icons/`, served from the local `svg/` set — all 3222 icons the
+picker offers are present) and two Google Fonts `preconnect` hints. The build
+fails if either string moves, so a re-export can't silently reintroduce a CDN
+dependency. `nginx.conf` also sets a CSP with no allowlisted hosts, and limits
+clients to RFC1918 / loopback.
+
+The config API is unauthenticated — anyone who can reach the page can read and
+overwrite the dashboard config.
+
+## Favicon
+
+`tools/make-favicon.py` generates `favicon.svg`, `favicon.png`,
+`apple-touch-icon.png` and `favicon.ico` from one set of path data, so the
+vector and the rasters can't drift. Stdlib only — it flattens the beziers and
+rasterizes them itself, no Pillow or cairo needed.
+
+```sh
+python3 tools/make-favicon.py   # after editing the design constants
+```
+
+Colours and geometry are constants at the top of that file. The outputs are
+committed, so the Docker build doesn't run the generator.
+
+`localize.py` injects the `<link>` tags and a `<title>`, neither of which the
+exported template carries — without them the tab shows a blank icon and the
+bare URL, and the browser probes `/favicon.ico` on every load.
+
+## A note on the console
+
+You may see requests for `%7B%7B%20app.iconSrc%20%7D%7D` and similar. Those are
+`{{ app.iconSrc }}`: the dc-runtime's markup sits in the document as real HTML,
+so the browser eagerly fetches placeholder `src` attributes while parsing,
+before the runtime replaces that subtree with the rendered output. Harmless —
+the icons you actually see are the post-render ones. `nginx.conf` answers these
+with a 1x1 transparent GIF so they stop showing up as 404s.
 
 ## Updating the page
 
@@ -104,10 +145,11 @@ Re-export `firehome.html`, then:
 ```sh
 ./tests/run.sh                  # needs python3 + node; no Docker required
 docker compose up -d --build
+./verify.sh
 ```
 
-`tests/run.sh` checks that `localize.py` still finds its patch targets and that
-the shim still satisfies the contract the dashboard relies on — the things a
-re-export can quietly break. `index.html` is served with
-`Cache-Control: no-cache`, so a reload picks it up; icons are cached for a year
-since they're addressed by name.
+`tests/run.sh` checks what a re-export can quietly break: that `localize.py`
+still finds its patch targets, that it runs with only the files the Dockerfile
+copies, and that the shim still satisfies the contract the dashboard relies on.
+`index.html` is served with `Cache-Control: no-cache`, so a reload picks it up;
+icons are cached for a year since they're addressed by name.

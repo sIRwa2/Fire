@@ -1,0 +1,147 @@
+#!/bin/sh
+# Post-deploy checks for the running stack. Run on the docker box after a pull:
+#
+#     ./verify.sh                       # against http://localhost:8080
+#     BASE=http://192.168.0.108:8080 ./verify.sh
+#
+# Everything here is non-destructive: the config round-trip writes under a
+# scratch key and removes it again, leaving your dashboard config untouched.
+#
+# Two things it cannot check, because they need a human:
+#   * that the dashboard actually renders and its icons appear
+#   * that config follows you to a second browser or device
+# For those, open the page, confirm no amber banner, run fireHomeStorage.dump()
+# in the console, change something, reload, then load it on your phone.
+
+BASE=${BASE:-http://localhost:8080}
+COMPOSE=${COMPOSE:-docker compose}
+pass=0
+fail=0
+
+ok()   { pass=$((pass + 1)); printf 'ok    %s\n' "$1"; }
+bad()  { fail=$((fail + 1)); printf 'FAIL  %s\n' "$1"; [ -n "$2" ] && printf '        %s\n' "$2"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# check <name> <expected> <actual>
+check() {
+    if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected [$2], got [$3]"; fi
+}
+
+code() { curl -s -o /dev/null -w '%{http_code}' "$BASE$1"; }
+
+echo "== containers =="
+if have docker; then
+    for svc in firehome api; do
+        cid=$($COMPOSE ps -q "$svc" 2>/dev/null)
+        if [ -z "$cid" ]; then
+            bad "$svc container is running"
+            continue
+        fi
+        state=$(docker inspect -f '{{.State.Status}}' "$cid")
+        check "$svc container is running" running "$state"
+    done
+    api_cid=$($COMPOSE ps -q api 2>/dev/null)
+    if [ -n "$api_cid" ]; then
+        health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$api_cid")
+        check "api reports healthy" healthy "$health"
+    fi
+    echo
+    echo "== image contents =="
+    check "nginx config is valid" "0" \
+        "$($COMPOSE exec -T firehome nginx -t >/dev/null 2>&1; echo $?)"
+    check "storage shim is in the served page" "1" \
+        "$($COMPOSE exec -T firehome grep -c fireHomeStorage /usr/share/nginx/html/index.html 2>/dev/null || echo 0)"
+    check "no CDN reference in the served page" "0" \
+        "$($COMPOSE exec -T firehome grep -c jsdelivr /usr/share/nginx/html/index.html 2>/dev/null || echo 0)"
+    icons=$($COMPOSE exec -T firehome sh -c 'ls /usr/share/nginx/html/icons | wc -l' 2>/dev/null | tr -d ' \r')
+    if [ "$icons" -gt 3000 ] 2>/dev/null; then
+        ok "icon set present ($icons files)"
+    else
+        bad "icon set present" "found [$icons], expected >3000"
+    fi
+else
+    echo "(docker not on PATH — skipping container and image checks)"
+fi
+
+echo
+echo "== http =="
+check "page responds"                200 "$(code /)"
+check "icon resolves locally"        200 "$(code /icons/plex.svg)"
+check "unknown icon 404s"            404 "$(code /icons/definitely-not-real.svg)"
+check "favicon.svg served"           200 "$(code /favicon.svg)"
+check "favicon.ico served"           200 "$(code /favicon.ico)"
+check "apple-touch-icon served"      200 "$(code /apple-touch-icon.png)"
+check "healthz"                      200 "$(code /healthz)"
+# The dc-runtime's un-hydrated placeholders; should be absorbed, not 404.
+check "template placeholders absorbed" 200 "$(code '/%7B%7B%20app.iconSrc%20%7D%7D')"
+
+ctype=$(curl -s -o /dev/null -w '%{content_type}' "$BASE/favicon.svg")
+check "favicon.svg content type" "image/svg+xml" "$ctype"
+
+# The links sit inside the bundle's JSON-escaped template, so match on the
+# hrefs rather than on attribute syntax that carries backslashes.
+page=$(curl -s "$BASE/")
+if printf '%s' "$page" | grep -qF '/favicon.svg' &&
+   printf '%s' "$page" | grep -qF '/apple-touch-icon.png'; then
+    ok "favicon links are in the page"
+else
+    bad "favicon links are in the page"
+fi
+if printf '%s' "$page" | grep -qF '<title>firehome<'; then
+    ok "page title is set"
+else
+    bad "page title is set"
+fi
+
+echo
+echo "== config store =="
+KEY=__verify_probe
+initial=$(curl -s "$BASE/api/config")
+case "$initial" in
+    *'"rev"'*) ok "GET /api/config responds" ;;
+    *) bad "GET /api/config responds" "got [$initial]" ;;
+esac
+
+curl -s -X PUT "$BASE/api/config" -H 'Content-Type: application/json' \
+     -d "{\"data\":{\"$KEY\":{\"probe\":true}}}" >/dev/null
+if curl -s "$BASE/api/config" | grep -q '"probe"'; then
+    ok "write round-trips through the proxy"
+else
+    bad "write round-trips through the proxy"
+fi
+
+if have docker; then
+    $COMPOSE restart api >/dev/null 2>&1
+    i=0
+    while [ $i -lt 60 ]; do
+        [ "$(code /api/config)" = "200" ] && break
+        i=$((i + 1)); sleep 0.5
+    done
+    if curl -s "$BASE/api/config" | grep -q '"probe"'; then
+        ok "config survives an api restart (volume persists)"
+    else
+        bad "config survives an api restart (volume persists)"
+    fi
+fi
+
+# Clean up the probe key without touching real config.
+curl -s -X PUT "$BASE/api/config" -H 'Content-Type: application/json' \
+     -d "{\"data\":{\"$KEY\":null}}" >/dev/null
+if curl -s "$BASE/api/config" | grep -q '"probe"'; then
+    bad "probe key removed"
+else
+    ok "probe key removed"
+fi
+
+if have docker; then
+    snaps=$($COMPOSE exec -T api sh -c 'ls /data/history 2>/dev/null | wc -l' 2>/dev/null | tr -d ' \r')
+    if [ "$snaps" -gt 0 ] 2>/dev/null; then
+        ok "history snapshots are being written ($snaps)"
+    else
+        bad "history snapshots are being written" "found [$snaps]"
+    fi
+fi
+
+echo
+printf '%d passed, %d failed\n' "$pass" "$fail"
+[ "$fail" -eq 0 ] || exit 1

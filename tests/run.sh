@@ -24,21 +24,33 @@ import os, re, shutil, subprocess, sys
 root, stage = sys.argv[1], sys.argv[2]
 dockerfile = open(os.path.join(root, "Dockerfile"), encoding="utf-8").read()
 
-# Sources of every COPY in the first build stage, i.e. exactly the files
-# localize.py can see inside the container.
-stage1 = re.split(r"^FROM ", dockerfile, flags=re.M)[1]
-sources = []
-for line in stage1.splitlines():
-    match = re.match(r"COPY\s+(?!--from)(.*)$", line.strip())
-    if match:
-        sources += match.group(1).split()[:-1]  # last token is the destination
+def copy_sources(block):
+    """Local sources of every COPY in a build stage (skipping --from stages)."""
+    out = []
+    for line in block.splitlines():
+        match = re.match(r"COPY\s+(?!--from)(.*)$", line.strip())
+        if match:
+            out += match.group(1).split()[:-1]  # last token is the destination
+    return out
+
+
+stages = re.split(r"^FROM ", dockerfile, flags=re.M)[1:]
+
+# Every COPY in the file must reference something that exists, or the build
+# dies late with a confusing error.
+for src in {s for stage in stages for s in copy_sources(stage)}:
+    assert os.path.exists(os.path.join(root, src)), \
+        "Dockerfile COPYs %s, which does not exist" % src
+print("ok    every COPY source exists")
+
+# Only the first stage's files are visible to localize.py in the container.
+sources = copy_sources(stages[0])
 assert sources, "no COPY sources found in the first build stage"
 print("ok    build stage copies: %s" % " ".join(sources))
 
 os.makedirs(stage)
 for src in sources:
     full = os.path.join(root, src)
-    assert os.path.exists(full), "Dockerfile COPYs %s, which does not exist" % src
     if os.path.isdir(full):
         shutil.copytree(full, os.path.join(stage, src))
     else:
@@ -70,6 +82,13 @@ print("ok    storage-shim.js round-trips byte-identically")
 
 assert html.count("</script>") == 5, "injection broke out of the template tag"
 print("ok    outer script tags intact")
+
+# The exported template carries no title or icon links, so a missing injection
+# means a blank tab icon and a /favicon.ico probe on every load.
+for needed in ('<title>firehome<', 'rel="icon" href="/favicon.svg"',
+               'rel="apple-touch-icon"'):
+    assert needed in tpl, "head injection missing: %s" % needed
+print("ok    title and favicon links injected")
 
 for host in ("cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"):
     assert host not in html, "%s still referenced" % host
