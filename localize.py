@@ -80,6 +80,15 @@ PAGE_WRAP_CSS = (
     "@media (max-width:768px){.page-wrap{width:100%!important}}"
 )
 
+# Drop the header 50px. It is the first child of .page-wrap, which has
+# padding-top:50px, so the padding stops this margin collapsing through the
+# parent and the header ends up 100px from the top.
+#
+# The header is in normal flow, so everything below it moves down by the same
+# 50px. Shifting the header alone would mean taking it out of flow, which would
+# leave a gap where it used to be.
+HEADER_CSS = ".page-wrap > header{margin-top:50px!important}"
+
 
 def inject_head(html: str) -> str:
     """Insert the title, favicon links and storage-shim.js into the template's <head>.
@@ -92,7 +101,7 @@ def inject_head(html: str) -> str:
     shim = open(SHIM_PATH, encoding="utf-8").read()
     tag = (
         HEAD_MARKUP
-        + "<style>" + PAGE_WRAP_CSS + "</style>"
+        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
     )
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")
@@ -104,8 +113,15 @@ def inject_head(html: str) -> str:
 
     # The layout CSS above is inert if the class is renamed, so fail rather than
     # ship a page whose margin silently went missing.
-    if 'class=\\"page-wrap\\"' not in body:
+    wrap_at = body.find('class=\\"page-wrap\\"')
+    if wrap_at < 0:
         raise ValueError("no page-wrap element found; PAGE_WRAP_CSS would be inert")
+
+    # HEADER_CSS selects .page-wrap > header, so a header that moved out of the
+    # wrapper would leave the rule matching nothing.
+    header_at = body.find("<header")
+    if header_at < 0 or header_at < wrap_at:
+        raise ValueError("no <header> inside page-wrap; HEADER_CSS would be inert")
 
     n = body.count("<head>")
     if n != 1:

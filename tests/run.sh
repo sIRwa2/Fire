@@ -99,6 +99,13 @@ wrap = re.search(r'class="page-wrap"[^>]*style="([^"]*)"', tpl).group(1)
 assert "margin:0 auto" in wrap, "page-wrap lost margin:0 auto, so width:90% centres nothing"
 print("ok    page-wrap dynamic margin wired up (%s + width:90%%)" % wrap)
 
+# The header offset relies on being a child of .page-wrap, and on the parent
+# keeping a top padding so the margin can't collapse through it.
+assert ".page-wrap > header{margin-top:50px!important}" in tpl, "header offset CSS missing"
+assert tpl.index("<header") > tpl.index('class="page-wrap"'), "header left page-wrap"
+assert re.search(r"padding:\s*\d+px", wrap), "page-wrap lost its padding; header margin would collapse"
+print("ok    header offset wired up")
+
 for host in ("cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"):
     assert host not in html, "%s still referenced" % host
 print("ok    no remaining external hosts")

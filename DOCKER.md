@@ -137,6 +137,12 @@ For a fixed margin instead, replace `PAGE_WRAP_CSS` in `localize.py` with
 `.page-wrap{margin:75px auto!important}` — keep the `auto`, or the block stops
 centring.
 
+`HEADER_CSS` in the same file drops the header 50px via
+`.page-wrap > header{margin-top:50px}`. The header is the wrapper's first child
+and the wrapper has `padding-top: 50px`, which is what stops that margin
+collapsing through the parent — so the header lands 100px from the top. Since
+the header is in normal flow, the content below moves down with it.
+
 ## Favicon
 
 `tools/make-favicon.py` generates `favicon.svg`, `favicon.png`,
