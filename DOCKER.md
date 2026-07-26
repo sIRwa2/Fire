@@ -55,11 +55,22 @@ Worth knowing:
 
 ## Starting clean
 
+`localize.py` rewrites the bundle's `defaultApps()` and `defaultGroups()` to
+return `[]`. Without that, none of the resets below produce an empty dashboard:
+they clear the stored config, the page falls back to the 12 `*.example.com` demo
+apps and 4 bookmark groups, and `componentDidMount()` calls `saveLS()` on mount
+— so the next page load persists the demo data again and undoes the reset.
+
+Emptying the defaults changes only the fallback. Placeholders already written
+into the stored config stay until it is wiped, so the first time you need both a
+rebuild and a reset.
+
 Three levels, smallest first:
 
 ```sh
 # 1. apps and bookmarks only — the app's own "Reset to defaults" button.
-#    Now writes through to the server, so it applies everywhere.
+#    Now empties rather than restoring demo data, and writes through to the
+#    server so it applies everywhere.
 
 # 2. everything including theme, from the browser console:
 fireHomeStorage.reset()
@@ -67,6 +78,15 @@ fireHomeStorage.reset()
 # 3. everything, from the shell — snapshots to history/ first:
 curl -X DELETE http://<host-lan-ip>:8080/api/config
 ```
+
+Both "add" buttons are hover-revealed (`opacity: 0` until their grid is
+hovered), which would leave a cleared dashboard looking like an empty page.
+`EMPTY_STATE_CSS` forces them visible while the grid holds nothing else —
+`sc-for` and `sc-if` compile to React Fragments, which render no DOM node, so
+`:only-child` identifies the empty case exactly.
+
+The add/edit dialog's URL field keeps its `URL — e.g. https://plex.example.com`
+hint, the one placeholder left in place; it is a form hint, not dashboard data.
 
 To also discard the history snapshots and start from bare metal:
 

@@ -89,9 +89,42 @@ PAGE_WRAP_CSS = (
 # leave a gap where it used to be.
 HEADER_CSS = ".page-wrap > header{margin-top:50px!important}"
 
+# The bundle ships a demo dashboard: 12 apps pointing at *.example.com and 4
+# bookmark groups of public sites. Emptying the defaults is what makes a clean
+# slate actually clean — wiping the stored config only falls back to these, and
+# componentDidMount() calls saveLS() on mount, so the very next page load
+# persists them again and undoes the reset.
+EMPTIED_DEFAULTS = ("defaultApps", "defaultGroups")
 
-def inject_head(html: str) -> str:
-    """Insert the title, favicon links and storage-shim.js into the template's <head>.
+# Both "add" affordances are hover-revealed (opacity:0 until the grid is
+# hovered), which on an empty dashboard means a page with nothing visible on it.
+# sc-for and sc-if compile to React Fragments, which render no DOM node, so an
+# empty list leaves the button as the only child — that identifies the empty
+# case exactly. The bookmarks button sits one level deeper, inside a <div>.
+EMPTY_STATE_CSS = (
+    ".app-grid .add-app:only-child{opacity:1!important}"
+    ".bm-grid > div:only-child .new-cat{opacity:1!important}"
+)
+
+
+def empty_defaults(body: str) -> str:
+    """Rewrite the placeholder default apps/bookmarks to empty lists.
+
+    Matches from the method signature to the first closing brace at method
+    indentation. A function replacement is used rather than a string so that the
+    escaped \\n sequences in the template are not read as regex escapes.
+    """
+    for name in EMPTIED_DEFAULTS:
+        pattern = re.compile(r"static " + name + r"\(\) \{.*?\\n  \}")
+        replacement = "static %s() {\\n    return [];\\n  }" % name
+        body, n = pattern.subn(lambda m: replacement, body)
+        if n != 1:
+            raise ValueError("expected 1 %s() definition, found %d" % (name, n))
+    return body
+
+
+def patch_template(html: str) -> str:
+    """Rewrite the inner template: head injection plus emptied placeholder data.
 
     The template lives as a JSON string inside <script type="__bundler/template">,
     so the injected markup has to carry that string's escaping: JSON escapes for
@@ -101,7 +134,7 @@ def inject_head(html: str) -> str:
     shim = open(SHIM_PATH, encoding="utf-8").read()
     tag = (
         HEAD_MARKUP
-        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + "</style>"
+        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + EMPTY_STATE_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
     )
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")
@@ -127,6 +160,8 @@ def inject_head(html: str) -> str:
     if n != 1:
         raise ValueError("expected 1 <head> in the template, found %d" % n)
     body = body.replace("<head>", "<head>" + escaped, 1)
+
+    body = empty_defaults(body)
 
     return html[: match.start()] + open_tag + body + close_tag + html[match.end():]
 
@@ -159,7 +194,7 @@ def main(src: str, dst: str) -> int:
         return 1
 
     try:
-        html = inject_head(html)
+        html = patch_template(html)
     except ValueError as exc:
         print(f"localize: {exc}", file=sys.stderr)
         return 1

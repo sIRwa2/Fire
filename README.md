@@ -41,14 +41,35 @@ same URL on a second device.
 
 ## Starting clean
 
+A clean dashboard is genuinely empty. `localize.py` rewrites the bundle's
+`defaultApps()` and `defaultGroups()` to return `[]`, dropping the 12
+`*.example.com` demo apps and 4 bookmark groups it shipped with.
+
 ```sh
 fireHomeStorage.reset()                              # browser console, incl. theme
 curl -X DELETE http://<host-ip>:8080/api/config      # shell; snapshots first
 docker compose down -v && docker compose up -d --build   # also drops history
 ```
 
-The dashboard's own "Reset to defaults" button covers apps and bookmarks only,
-and now writes through to the server so it applies on every device.
+**Rebuilding is not enough on its own.** Emptying the defaults only changes what
+the page falls back to; placeholders already written into the stored config stay
+until you wipe it. So the first time, rebuild *and* reset:
+
+```sh
+docker compose up -d --build && curl -X DELETE http://<host-ip>:8080/api/config
+```
+
+Then reload. The dashboard's own "Reset to defaults" button now also empties
+rather than restoring demo data, and writes through to the server so it applies
+on every device.
+
+The "Add application" and "New category" buttons are hover-revealed, which would
+leave an empty dashboard looking blank, so they're forced visible while their
+grid is empty.
+
+One placeholder is left deliberately: the add/edit dialog's URL field keeps its
+`URL — e.g. https://plex.example.com` format hint, which is a form hint rather
+than dashboard content.
 
 ## What's here
 

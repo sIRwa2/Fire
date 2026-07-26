@@ -106,6 +106,20 @@ assert tpl.index("<header") > tpl.index('class="page-wrap"'), "header left page-
 assert re.search(r"padding:\s*\d+px", wrap), "page-wrap lost its padding; header margin would collapse"
 print("ok    header offset wired up")
 
+# A clean slate has to be genuinely empty: wiping stored config falls back to
+# these defaults, and componentDidMount persists them again on the next load.
+for name in ("defaultApps", "defaultGroups"):
+    body = re.search(r"static " + name + r"\(\) \{(.*?)\n  \}", tpl, re.S).group(1)
+    assert body.strip() == "return [];", "%s still returns data: %s" % (name, body.strip()[:60])
+for gone in ("bitwarden.example.com", "news.ycombinator.com",
+             "store.steampowered.com", "Todoist"):
+    assert gone not in tpl, "placeholder data still present: %s" % gone
+# The one deliberate survivor is the URL field's format hint, not dashboard data.
+assert tpl.count("example.com") == 1, "unexpected example.com references"
+assert 'placeholder="URL' in tpl, "the URL field's example hint went missing"
+assert ".app-grid .add-app:only-child{opacity:1!important}" in tpl, "empty-state CSS missing"
+print("ok    placeholder apps and bookmarks emptied")
+
 for host in ("cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"):
     assert host not in html, "%s still referenced" % host
 print("ok    no remaining external hosts")
