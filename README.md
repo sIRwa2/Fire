@@ -85,6 +85,15 @@ The add/edit dialog's URL field keeps a bare `URL` placeholder. The dialog has n
 labels — every field relies on its placeholder — so dropping the attribute
 outright would leave an unlabelled box.
 
+## Updating the icon set
+
+**Settings → Icons → Check for updates** pulls new and changed icons from
+[homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons).
+Tracks `main`, runs only when you click, and lands in a volume that sits in front
+of the set baked into the image — so `docker compose down -v` reverts to the
+shipped icons. This is the only thing in the stack that reaches the internet, and
+only on that click. See [DOCKER.md](DOCKER.md#icon-updates).
+
 ## What's here
 
 | Path | |
@@ -94,6 +103,7 @@ outright would leave an unlabelled box.
 | `extract.py` | Unpacks the self-extracting bundle into plain HTML + `assets/`, so the browser never runs the loader. |
 | `storage-shim.js` | Redirects the page's `localStorage` config to the config service. |
 | `api/server.py` | The config store. Stdlib only. |
+| `api/icons.py` | Icon updates from the upstream repo, diffed by git blob sha. |
 | `nginx.conf`, `Dockerfile`, `docker-compose.yml` | Serving and orchestration. |
 | `tools/make-favicon.py` | Generates the favicon set from one set of path data. |
 | `svg/` | The homarr-labs icon set, served at `/icons/` so nothing loads from a CDN. |

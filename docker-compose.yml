@@ -12,6 +12,9 @@ services:
       # to 127.0.0.1 for this host only. nginx additionally rejects any client
       # outside RFC1918 / loopback — see nginx.conf.
       - "${FIREHOME_BIND:-0.0.0.0}:${FIREHOME_PORT:-8080}:80"
+    volumes:
+      # Updated icons, served in front of the set baked into the image.
+      - firehome-icons:/usr/share/nginx/html/icons-live:ro
     depends_on:
       api:
         condition: service_healthy
@@ -33,6 +36,10 @@ services:
     restart: unless-stopped
     volumes:
       - firehome-data:/data
+      - firehome-icons:/data/icons
+      # The shipped icon set, read-only, so the updater can diff against it by
+      # blob sha and download only what actually changed.
+      - ./svg:/srv/icons-baked:ro
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -43,3 +50,4 @@ services:
 
 volumes:
   firehome-data:
+  firehome-icons:

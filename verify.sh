@@ -143,6 +143,25 @@ else
     ok "probe key removed"
 fi
 
+echo
+echo "== icon set =="
+icons=$(curl -s "$BASE/api/icons")
+count=$(printf '%s' "$icons" | sed -n 's/.*"count": *\([0-9]*\).*/\1/p')
+if [ "${count:-0}" -gt 3000 ] 2>/dev/null; then
+    ok "icon list served from the api ($count)"
+else
+    bad "icon list served from the api" "count=[$count]"
+fi
+# The overlay sits in front of the baked set; either source satisfies this.
+check "an icon resolves through the overlay" 200 "$(code /icons/plex.svg)"
+# nginx constrains the filename shape, so a traversal attempt must not resolve.
+check "traversal in an icon path is refused" 404 "$(code '/icons/..%2Findex.html')"
+if printf '%s' "$icons" | grep -q '"running"'; then
+    ok "icon updater reports status"
+else
+    bad "icon updater reports status"
+fi
+
 if have docker; then
     snaps=$($COMPOSE exec -T api sh -c 'ls /data/history 2>/dev/null | wc -l' 2>/dev/null | tr -d ' \r')
     if [ "$snaps" -gt 0 ] 2>/dev/null; then

@@ -349,6 +349,65 @@ Because `ic.bg`/`ic.border` were what marked the selected icon in the accent
 colour, the grid no longer shows which icon is chosen. The 44px preview beside
 the search box still does.
 
+## Icon updates
+
+The dashboard can pull new and changed icons from
+[homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons)
+from the settings panel: **Settings → Icons → Check for updates**. It tracks
+`main`, and only ever runs when you click — there is no background polling, so a
+normal page load still makes no outbound request.
+
+**The picker's list was the real obstacle.** It ships baked into the page as
+`__icons_data`, separately from the files, and the two already disagreed: 3222
+names against 3232 files, so ten icons on disk (`claude-ai-dark`,
+`aws-dynamodb`, …) could not be selected at all. Downloading more would not have
+surfaced them either. The list now comes from `GET /api/icons`, which enumerates
+the real directories, with the baked list kept as the fallback for when the
+service is unreachable — which both fixes that mismatch and is what lets an
+update appear without rebuilding the image.
+
+**The diff is exact and cheap.** GitHub's tree API returns every path with its
+git blob sha in one request, and a blob sha is just
+`sha1("blob <bytelen>\0" + bytes)`, so the same value can be computed locally and
+compared without downloading anything. Only genuinely new or changed files are
+fetched, each one checksum-verified against the sha the tree reported before it is
+written. Checked against all 3232 upstream icons: the computed shas matched
+GitHub's exactly.
+
+Two directories are involved:
+
+| | |
+| --- | --- |
+| `svg/` → `/srv/icons-baked` | read-only bind mount of the repo. Ships with the image, so the full set works with no network access ever. |
+| `firehome-icons` volume | writable overlay. Updates land here; nginx serves it *in front of* the baked set. |
+
+So an update never mutates the image, and `docker compose down -v` reverts to the
+shipped set. If the bind mount is missing the updater degrades rather than
+crashing — it just sees no baked files and would fetch everything.
+
+```
+GET  /api/icons          -> {"icons": [...], "count": N, "status": {...}}
+POST /api/icons/update   start an update; 409 while one is already running
+GET  /api/icons/status   phase while running, plus the last result
+```
+
+Worth knowing:
+
+- **This is the one thing that reaches the internet.** The api container talks to
+  `api.github.com` and `raw.githubusercontent.com`, on your click only. The page
+  itself still makes no external request, so the CSP is unchanged.
+- **Third-party SVGs.** They render through `<img>`, which never executes script,
+  but the page CSP needs `script-src 'unsafe-inline'` for the dc-runtime, so a
+  scripted SVG would run if someone opened `/icons/foo.svg` directly. That
+  location now has its own far stricter policy
+  (`default-src 'none'; sandbox`), and nginx only serves filenames matching the
+  same flat shape the updater will write.
+- **Names are validated before they touch the filesystem**, so a path in the tree
+  response cannot escape the overlay directory.
+- **Rate limit.** Unauthenticated GitHub API is 60 requests/hour per IP and a
+  check costs two, so it is not a practical concern. Set
+  `FIREHOME_GITHUB_TOKEN` for headroom if you want.
+
 ## Favicon
 
 `tools/make-favicon.py` generates `favicon.svg`, `favicon.png`,

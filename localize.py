@@ -301,9 +301,138 @@ TOUCH_CSS = (
 )
 
 
+def tpl(text: str) -> str:
+    """Real source text -> how it appears inside the template's JSON string.
+
+    Lets the patches below be written as ordinary JS and HTML instead of by hand
+    with \\n and \\" escapes, which is where this went wrong the first time.
+    Order matters: backslashes, then quotes, then newlines, and </ last because
+    its replacement introduces a backslash of its own.
+    """
+    return (
+        text.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("</", "<\\u002F")
+    )
+
+
+# ── Icon set updates ────────────────────────────────────────────────────────
+# The picker's list is baked into the page as __icons_data, separately from the
+# files in svg/ — and it already disagrees with them: 3222 names against 3232
+# files, so ten icons on disk (claude-ai-dark, aws-dynamodb, …) cannot be
+# selected at all. Downloading new icons would not surface them either.
+#
+# So the list is taken from GET /api/icons, which enumerates the real
+# directories, keeping the baked list as the fallback for when the service is
+# unreachable. That fixes the existing mismatch and is what lets an update show
+# up without rebuilding the image.
+#
+# refreshIcons() is called outside the existing try/catch in componentDidMount so
+# a failure there cannot skip it, and it swallows its own errors: a dashboard that
+# still renders with the baked list beats one that breaks because the service is
+# down.
+#
+# The button only ever runs on click — no polling — so the container makes no
+# outbound request during a normal page load. See api/icons.py.
+ICON_UPDATE_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "load the icon list from the service",
+            "      if (te) this.setState({ themes: JSON.parse(te.textContent) });",
+            "      if (te) this.setState({ themes: JSON.parse(te.textContent) });\n"
+            "    } catch (e) {}\n"
+            "    this.refreshIcons();\n"
+            "    try {",
+        ),
+        (
+            "icon-update state",
+            "      themePos: { x: 0, y: 0 }\n    };",
+            "      themePos: { x: 0, y: 0 },\n"
+            "      iconCount: 0,\n"
+            "      iconMsg: '',\n"
+            "      iconBusy: false\n    };",
+        ),
+        (
+            "icon-update handlers",
+            "  resetDefaults = () => {",
+            """  refreshIcons = () => fetch('/api/icons')
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(d => {
+      if (Array.isArray(d.icons) && d.icons.length) {
+        this.setState({ icons: d.icons, iconCount: d.count });
+      }
+      return d;
+    })
+    .catch(() => null);
+  updateIcons = () => {
+    if (this.state.iconBusy) return;
+    this.setState({ iconBusy: true, iconMsg: 'checking...' });
+    const done = (msg) => this.setState({ iconBusy: false, iconMsg: msg });
+    const poll = () => fetch('/api/icons/status')
+      .then(r => r.json())
+      .then(st => {
+        if (st.running) {
+          this.setState({ iconMsg: st.phase || 'working...' });
+          setTimeout(poll, 700);
+          return;
+        }
+        const last = st.last || {};
+        this.refreshIcons().then(() => done(
+          last.error ? 'failed: ' + last.error
+            : (last.new || last.changed)
+              ? (last.new || 0) + ' new, ' + (last.changed || 0) + ' updated'
+                + (last.failed ? ', ' + last.failed + ' failed' : '')
+              : 'already up to date'
+        ));
+      })
+      .catch(e => done('failed: ' + e.message));
+    fetch('/api/icons/update', { method: 'POST' })
+      .then(r => r.ok ? poll() : r.json().then(d => done('failed: ' + (d.error || r.status))))
+      .catch(e => done('failed: ' + e.message));
+  };
+  resetDefaults = () => {""",
+        ),
+        (
+            "icon-update props",
+            "      pickIcon: this.pickIcon,",
+            "      pickIcon: this.pickIcon,\n"
+            "      updateIcons: this.updateIcons,\n"
+            "      iconSummary: (s.iconCount || (s.icons || []).length || 0)"
+            " + ' icons installed' + (s.iconMsg ? ' - ' + s.iconMsg : ''),\n"
+            "      iconBtnLabel: s.iconBusy ? 'Checking...' : 'Check for updates',",
+        ),
+        (
+            "icon-update settings row",
+            '        <div style="display:flex;align-items:center;'
+            "justify-content:space-between;margin-top:22px;padding-top:18px;"
+            'border-top:1px solid rgba(255,255,255,.08)">\n'
+            '          <button sc-camel-on-click="{{ resetDefaults }}"',
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            'text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px">Icons</div>\n'
+            '        <div style="display:flex;align-items:center;'
+            'justify-content:space-between;gap:12px">\n'
+            '          <span style="font-size:12.5px;color:#9aa3ad">'
+            "{{ iconSummary }}</span>\n"
+            '          <button sc-camel-on-click="{{ updateIcons }}" style="flex:none;'
+            "background:none;border:1px solid rgba(255,255,255,.18);border-radius:7px;"
+            "padding:7px 14px;font-size:12.5px;font-weight:600;color:#dfe3e8;"
+            'cursor:pointer;font-family:inherit" '
+            'style-hover="background:rgba(255,255,255,.08)">{{ iconBtnLabel }}</button>\n'
+            "        </div>\n"
+            '        <div style="display:flex;align-items:center;'
+            "justify-content:space-between;margin-top:22px;padding-top:18px;"
+            'border-top:1px solid rgba(255,255,255,.08)">\n'
+            '          <button sc-camel-on-click="{{ resetDefaults }}"',
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
-    for name, old, new in JS_PATCHES:
+    for name, old, new in JS_PATCHES + ICON_UPDATE_PATCHES:
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))

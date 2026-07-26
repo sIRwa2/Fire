@@ -5,6 +5,9 @@
   PUT    /config   <- {"data": {...}}   merge; a null value drops that key
   POST   /config   same as PUT (navigator.sendBeacon can only POST)
   DELETE /config   wipe — "start clean"
+  GET    /icons          -> {"icons": [...], "count": N, "status": {...}}
+  POST   /icons/update   start an update from GitHub; 409 while one is running
+  GET    /icons/status   progress and the last result
   GET    /healthz
 
 Deliberately stdlib-only: the whole job is to hold a few kilobytes of dashboard
@@ -25,6 +28,8 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import icons as icons_mod
+
 DATA_DIR = os.environ.get("FIREHOME_DATA", "/data")
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 HISTORY_DIR = os.path.join(DATA_DIR, "history")
@@ -34,7 +39,14 @@ MAX_BODY = 1 << 20  # 1 MiB; the real document is a few KB
 
 EMPTY = {"rev": 0, "updated": None, "data": {}}
 
+# Writable overlay on the volume, plus the read-only set bind-mounted from the
+# repo's svg/. See icons.py for why there are two.
+ICONS_DIR = os.path.join(DATA_DIR, "icons")
+BAKED_ICONS = os.environ.get("FIREHOME_BAKED_ICONS", "/srv/icons-baked")
+ICONS_STATE = os.path.join(DATA_DIR, "icons-state.json")
+
 _lock = threading.Lock()
+_icons = None  # set in main(), so the paths are configured in one place
 
 
 def log(msg):
@@ -177,6 +189,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/healthz":
             return self._send(200, {"ok": True})
+        if self.path == "/icons":
+            names = _icons.names()
+            return self._send(200, {"icons": names, "count": len(names),
+                                    "status": _icons.status()})
+        if self.path == "/icons/status":
+            return self._send(200, _icons.status())
         if self.path != "/config":
             return self._fail(404, "not found")
         try:
@@ -188,6 +206,11 @@ class Handler(BaseHTTPRequestHandler):
     do_HEAD = do_GET
 
     def _save(self):
+        if self.path == "/icons/update":
+            if not _icons.start():
+                return self._fail(409, "an update is already running")
+            log("icons: update requested by %s" % self.address_string())
+            return self._send(200, _icons.status())
         if self.path != "/config":
             return self._fail(404, "not found")
         try:
@@ -220,7 +243,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    global _icons
     os.makedirs(DATA_DIR, exist_ok=True)
+    _icons = icons_mod.IconStore(ICONS_DIR, BAKED_ICONS, ICONS_STATE, log=log)
+    log("icons: overlay=%s baked=%s (%d available)"
+        % (ICONS_DIR, BAKED_ICONS, len(_icons.names())))
     server = ThreadingHTTPServer(("", PORT), Handler)
     server.daemon_threads = True
     log("firehome-config listening on :%d, data=%s" % (PORT, DATA_DIR))

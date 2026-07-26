@@ -2,11 +2,12 @@ FROM python:3.12-alpine
 
 # Fresh named volumes inherit the ownership of the image's directory, so /data
 # is created and chowned here to let the service run unprivileged.
-RUN adduser -D -u 10001 app \
+RUN apk add --no-cache ca-certificates \
+    && adduser -D -u 10001 app \
     && mkdir -p /data \
     && chown -R app:app /data
 
-COPY server.py /app/server.py
+COPY server.py icons.py /app/
 
 USER app
 ENV FIREHOME_DATA=/data FIREHOME_API_PORT=8080 PYTHONUNBUFFERED=1

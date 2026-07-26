@@ -164,6 +164,17 @@ assert "lockBg: s.locked ? 'var(--accent)'" in tpl, \
     "lockBg no longer marks the locked state, which the border used to"
 print("ok    header lock/settings buttons flattened, locked state preserved")
 
+# The picker takes its list from the service so an update shows up without a
+# rebuild, and so the baked list's 3222-vs-3232 mismatch stops mattering.
+for needed in ("refreshIcons = () => fetch('/api/icons')", "this.refreshIcons();",
+               "fetch('/api/icons/update', { method: 'POST' })",
+               "updateIcons: this.updateIcons,", "{{ iconSummary }}",
+               "{{ iconBtnLabel }}", ">Icons</div>"):
+    assert needed in tpl, "icon-update patch missing: %s" % needed
+# The baked list must survive as the fallback for when the service is unreachable.
+assert 'id="__icons_data"' in tpl, "baked icon list is gone; nothing to fall back to"
+print("ok    icon list served from the api, update button wired")
+
 # The picker tiles are targeted by data-icon, not by the runtime-generated .scpx
 # class, whose base36 suffix moves whenever render order changes.
 assert 'data-icon="{{ ic.name }}"' in tpl, "icon tiles lost the data-icon hook"
@@ -186,6 +197,10 @@ for host in ("cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"):
     assert host not in html, "%s still referenced" % host
 print("ok    no remaining external hosts")
 PY
+
+echo
+echo "== icon updater (offline) =="
+python3 "$ROOT/tests/icons_test.py"
 
 echo
 echo "== icon -> title suggestion =="
