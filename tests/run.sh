@@ -90,6 +90,15 @@ for needed in ('<title>firehome<', 'rel="icon" href="/favicon.svg"',
     assert needed in tpl, "head injection missing: %s" % needed
 print("ok    title and favicon links injected")
 
+# The dynamic margin depends on width:90% reaching an element that still
+# carries margin:0 auto — either half missing means no margin at all.
+assert 'class="page-wrap"' in tpl, "page-wrap element is gone"
+assert ".page-wrap{box-sizing:border-box!important;width:90%!important}" in tpl, \
+    "page-wrap layout CSS missing"
+wrap = re.search(r'class="page-wrap"[^>]*style="([^"]*)"', tpl).group(1)
+assert "margin:0 auto" in wrap, "page-wrap lost margin:0 auto, so width:90% centres nothing"
+print("ok    page-wrap dynamic margin wired up (%s + width:90%%)" % wrap)
+
 for host in ("cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"):
     assert host not in html, "%s still referenced" % host
 print("ok    no remaining external hosts")

@@ -53,6 +53,33 @@ HEAD_MARKUP = (
     '<link rel="apple-touch-icon" href="/apple-touch-icon.png">'
 )
 
+# Flame — the design this dashboard follows — never declares a margin on its
+# container. Layout.module.css is:
+#
+#     .Container { width: 100%; padding: 20px; margin: 0 auto; }
+#     @media (min-width: 769px)  { .Container { width: 90%; } }
+#     @media (min-width: 1201px) { .Container { padding: 50px 250px; } }
+#
+# width:90% plus margin:0 auto makes the auto margins split the leftover 10%,
+# so each side is 5% of the viewport rather than a fixed number. That is where a
+# measured 75.203px comes from: 5% of a 1504px window. Hardcoding 75px would
+# only match at that one width.
+#
+# The exported template already has the margin:0 auto and the 50px 250px
+# padding, but not the width — and with width:auto the auto margins resolve to
+# 0, which is why there is no margin at all today.
+#
+# box-sizing comes along because Flame gets border-box from a global * reset
+# that this template has no equivalent of. Under content-box, width:90% plus
+# 500px of horizontal padding would overflow the viewport and add a scrollbar.
+#
+# !important because the element carries an inline style attribute; it has no
+# width today, but a re-export that added one would silently win otherwise.
+PAGE_WRAP_CSS = (
+    ".page-wrap{box-sizing:border-box!important;width:90%!important}"
+    "@media (max-width:768px){.page-wrap{width:100%!important}}"
+)
+
 
 def inject_head(html: str) -> str:
     """Insert the title, favicon links and storage-shim.js into the template's <head>.
@@ -63,13 +90,22 @@ def inject_head(html: str) -> str:
     so a nested </script> cannot terminate the outer tag early.
     """
     shim = open(SHIM_PATH, encoding="utf-8").read()
-    tag = HEAD_MARKUP + "<script>\n" + shim + "\n</script>"
+    tag = (
+        HEAD_MARKUP
+        + "<style>" + PAGE_WRAP_CSS + "</style>"
+        + "<script>\n" + shim + "\n</script>"
+    )
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")
 
     match = TEMPLATE_RE.search(html)
     if not match:
         raise ValueError("no __bundler/template section found")
     open_tag, body, close_tag = match.groups()
+
+    # The layout CSS above is inert if the class is renamed, so fail rather than
+    # ship a page whose margin silently went missing.
+    if 'class=\\"page-wrap\\"' not in body:
+        raise ValueError("no page-wrap element found; PAGE_WRAP_CSS would be inert")
 
     n = body.count("<head>")
     if n != 1:

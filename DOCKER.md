@@ -111,6 +111,32 @@ clients to RFC1918 / loopback.
 The config API is unauthenticated — anyone who can reach the page can read and
 overwrite the dashboard config.
 
+## Page margin
+
+`localize.py` adds `width: 90%` and `box-sizing: border-box` to `.page-wrap`,
+which reproduces Flame's container:
+
+```css
+.Container { width: 100%; padding: 20px; margin: 0 auto; }
+@media (min-width: 769px)  { .Container { width: 90%; } }
+@media (min-width: 1201px) { .Container { padding: 50px 250px; } }
+```
+
+Flame never declares a margin. `width: 90%` with `margin: 0 auto` makes the auto
+margins split the leftover 10%, so each side is **5% of the viewport** — 75.2px
+at a 1504px window, which is where a measured `75.203px` comes from. A fixed
+`75px` would only match at that one width.
+
+The exported template already had the `margin: 0 auto` and the `50px 250px`
+padding but not the width, and with `width: auto` the auto margins resolve to 0
+— hence no margin at all. `box-sizing` is needed because Flame gets border-box
+from a global `*` reset this template has no equivalent of; under content-box,
+`width: 90%` plus 500px of horizontal padding would overflow the viewport.
+
+For a fixed margin instead, replace `PAGE_WRAP_CSS` in `localize.py` with
+`.page-wrap{margin:75px auto!important}` — keep the `auto`, or the block stops
+centring.
+
 ## Favicon
 
 `tools/make-favicon.py` generates `favicon.svg`, `favicon.png`,
