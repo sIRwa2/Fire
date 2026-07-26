@@ -213,7 +213,10 @@ dependency. `nginx.conf` also sets a CSP with no allowlisted hosts, and limits
 clients to RFC1918 / loopback.
 
 The config API is unauthenticated — anyone who can reach the page can read and
-overwrite the dashboard config.
+overwrite the dashboard config. See
+[Risks and trade-offs](README.md#risks-and-trade-offs) in the README for the full
+list, including what the CSP does and does not buy you, and how config can be
+lost.
 
 ## Page margin
 

@@ -94,6 +94,76 @@ of the set baked into the image — so `docker compose down -v` reverts to the
 shipped icons. This is the only thing in the stack that reaches the internet, and
 only on that click. See [DOCKER.md](DOCKER.md#icon-updates).
 
+## Risks and trade-offs
+
+Everything here assumes a trusted LAN and a dashboard whose contents are not
+precious. Worth knowing before you rely on it, roughly in the order it could
+actually bite you.
+
+### Losing config
+
+- **Nothing is authenticated.** Anyone who can reach the page can read, rewrite
+  or wipe your dashboard, and can trigger icon downloads. `DELETE /api/config` is
+  one unauthenticated request. There is no login, no token, no CSRF protection —
+  a page on another site could POST to your dashboard if it knows the address.
+  The nginx RFC1918 allowlist limits *where* from, which is not the same as who.
+- **A stale browser tab can overwrite newer config.** Last write wins, with no
+  version check: a tab left open since yesterday will happily save over today's
+  edits made elsewhere. Both are recoverable from `/data/history/`, which keeps
+  the last 20 documents (`FIREHOME_HISTORY_KEEP`) — but you have to notice.
+- **Degraded mode loses edits silently-ish.** If the config service is
+  unreachable when the page loads, an amber banner appears and edits go to that
+  browser's own `localStorage`. They are *not* pushed later; the server copy wins
+  on the next successful load. The banner is the only warning.
+- **The config volume is the only copy.** No backup, and `docker compose down -v`
+  destroys it along with the history. Copy `/data/config.json` somewhere if your
+  layout took real effort.
+
+### Third-party content
+
+- **The icon updater tracks `main`, so upstream changes land without review.**
+  Icons come from a repository you don't control; a compromised or careless
+  upstream commit would be fetched on your next click. Transport is HTTPS with
+  certificate validation and each file is checksum-verified against the sha the
+  tree API reported — but that only proves you got what GitHub served, not that
+  it is benign. Pinning a commit instead is a small change to `api/icons.py` if
+  you later want a review step.
+- **SVGs are active content.** They render through `<img>`, which never executes
+  script, and `/icons/` is served under its own `default-src 'none'; sandbox`
+  policy. A scripted icon still would not run, but the reason it cannot is a
+  header, not the file being harmless.
+- **Update runs are unauthenticated too**, so anyone on the LAN can make the
+  container fetch from GitHub. Concurrent runs are refused, downloads are capped
+  at 512 KB per file and 6000 files, and nothing outside a flat
+  `[A-Za-z0-9._-]+\.svg` shape is ever written.
+
+### The page itself
+
+- **The CSP is weaker than it looks.** `script-src` needs both `'unsafe-inline'`
+  and `'unsafe-eval'` because the dc-runtime evaluates the page's logic through
+  `new Function()`. No external host is allowlisted, so the page cannot phone
+  home, but inline-script protection is effectively off — meaning any injected
+  markup would execute. The only thing that writes to the page is your own
+  config, which is exactly what an unauthenticated API accepts from anyone.
+- **Keyboard focus indication is gone on three buttons** — the two "add" buttons
+  and the header pair. Removing the focus ring was deliberate and is called out
+  in `localize.py`, with the accessible variant recorded there.
+
+### Maintenance
+
+- **The build patches the bundle by matching exact strings.** Re-exporting
+  `firehome.html` can move any of them. Every patch asserts its hit count, so the
+  build fails loudly rather than silently dropping a change — run
+  `./tests/run.sh` after a re-export and fix what it reports.
+- **The api container bind-mounts `./svg` from the repo**, so it expects to be
+  started from a checkout. Without it the updater sees no baked icons and would
+  try to fetch all 3232.
+
+The api container runs unprivileged with `cap_drop: ALL`, `no-new-privileges`, a
+read-only root filesystem and no published port — reachable only through nginx.
+That limits what a bug in it can reach; it does not make the endpoints safe to
+expose. Don't port-forward this.
+
 ## What's here
 
 | Path | |
