@@ -1,8 +1,9 @@
 # Stage 1: rewrite firehome.html's two remaining internet dependencies so the
-# served page is fully self-contained. See localize.py.
+# served page is fully self-contained, and inject the storage shim.
+# See localize.py. Keep this COPY in step with the whitelist in .dockerignore.
 FROM python:3.12-alpine AS localize
 WORKDIR /build
-COPY localize.py firehome.html ./
+COPY localize.py storage-shim.js firehome.html ./
 RUN python localize.py firehome.html index.html
 
 # Stage 2: static server. Nothing but nginx, the page and the icon set.
