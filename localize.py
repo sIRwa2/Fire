@@ -381,10 +381,10 @@ ICON_UPDATE_PATCHES = tuple(
         const last = st.last || {};
         this.refreshIcons().then(() => done(
           last.error ? 'failed: ' + last.error
-            : (last.new || last.changed)
+            : (last.new || last.changed || last.failed)
               ? (last.new || 0) + ' new, ' + (last.changed || 0) + ' updated'
                 + (last.failed ? ', ' + last.failed + ' failed' : '')
-              : 'already up to date'
+              : last.attempted ? 'nothing applied' : 'already up to date'
         ));
       })
       .catch(e => done('failed: ' + e.message));

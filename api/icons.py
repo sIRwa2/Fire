@@ -168,10 +168,8 @@ class IconStore:
 
             local = self.local_shas()
             todo = [n for n, sha in upstream.items() if local.get(n) != sha]
-            new = [n for n in todo if n not in local]
             result["upstream"] = len(upstream)
-            result["new"] = len(new)
-            result["changed"] = len(todo) - len(new)
+            result["attempted"] = len(todo)
 
             if len(todo) > MAX_DOWNLOADS:
                 raise ValueError(
@@ -179,6 +177,10 @@ class IconStore:
                 )
 
             os.makedirs(self.overlay, exist_ok=True)
+            # Counted as each file lands, not up front from the size of `todo`:
+            # these numbers are reported to the user as what happened, and a run
+            # whose downloads all failed must not claim it updated anything.
+            added = changed = 0
             failed = []
             for i, name in enumerate(sorted(todo), 1):
                 self._progress["phase"] = "downloading %d/%d" % (i, len(todo))
@@ -187,18 +189,24 @@ class IconStore:
                     if blob_sha(data) != upstream[name]:
                         raise ValueError("checksum mismatch")
                     self._write(name, data)
+                    if name in local:
+                        changed += 1
+                    else:
+                        added += 1
                 except Exception as exc:
                     failed.append(name)
                     self.log("icons: %s failed: %r" % (name, exc))
 
+            result["new"] = added
+            result["changed"] = changed
             result["failed"] = len(failed)
             result["failed_names"] = sorted(failed)[:20]
             result["seconds"] = round(time.time() - started, 1)
             result["error"] = None
             self.log(
-                "icons: %s — %d new, %d changed, %d failed in %.1fs"
-                % (result.get("commit", "?"), result["new"], result["changed"],
-                   len(failed), result["seconds"])
+                "icons: %s — %d new, %d changed, %d failed of %d attempted in %.1fs"
+                % (result.get("commit", "?"), added, changed, len(failed),
+                   len(todo), result["seconds"])
             )
         except Exception as exc:
             result["error"] = "%s: %s" % (type(exc).__name__, exc)

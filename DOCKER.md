@@ -394,6 +394,15 @@ POST /api/icons/update   start an update; 409 while one is already running
 GET  /api/icons/status   phase while running, plus the last result
 ```
 
+**"already up to date"** means the last run finished with 0 new and 0 changed:
+every icon in upstream's `svg/` has a byte-identical local copy. Note what it does
+not say — it is an absolute comparison against upstream right now, not a delta
+since the previous check, and it ignores local-only files, since the diff only
+walks upstream entries and the updater never deletes anything. The counts describe
+what was actually written, so a run whose downloads all failed reports
+`0 new, 0 updated, N failed` rather than claiming success; `attempted` in the
+state file records what it set out to do.
+
 Worth knowing:
 
 - **This is the one thing that reaches the internet.** The api container talks to

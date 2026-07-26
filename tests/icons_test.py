@@ -84,6 +84,50 @@ try:
     check("status reports the installed count",
           store.status()["installed"] == 3, store.status())
 
+    # Reporting must describe what happened, not what was attempted. A run whose
+    # downloads all fail used to report them as "updated", because new/changed
+    # were taken from the size of the todo list before anything was fetched.
+    fresh = os.path.join(work, "overlay2")
+    os.makedirs(fresh)
+    reporting = icons_mod.IconStore(fresh, baked, os.path.join(work, "s3.json"),
+                                    log=lambda m: None)
+    upstream_sha = icons_mod.blob_sha(b"<svg>upstream</svg>")
+
+    def fake_get(url, timeout=None, limit=None):
+        if "commits" in url:
+            return b'{"sha":"deadbeefcafe","commit":{"committer":{"date":"2026-01-01T00:00:00Z"}}}'
+        if "trees" in url:
+            return ('{"truncated":false,"tree":[{"path":"svg/plex.svg","sha":"%s"},'
+                    '{"path":"svg/newone.svg","sha":"%s"}]}'
+                    % (upstream_sha, upstream_sha)).encode()
+        raise OSError("download refused")  # every file download fails
+
+    reporting._get = fake_get
+    reporting.start()
+    reporting._thread.join(10)
+    last = reporting.state()
+    check("all-failed run reports 0 new", last.get("new") == 0, last)
+    check("all-failed run reports 0 changed", last.get("changed") == 0, last)
+    check("all-failed run reports the failures", last.get("failed") == 2, last)
+    check("all-failed run records what it attempted", last.get("attempted") == 2, last)
+    check("nothing was written on failure", os.listdir(fresh) == [], os.listdir(fresh))
+
+    # And the happy path still counts new vs changed correctly.
+    def ok_get(url, timeout=None, limit=None):
+        if "commits" in url or "trees" in url:
+            return fake_get(url)
+        return b"<svg>upstream</svg>"
+
+    reporting._get = ok_get
+    reporting.start()
+    reporting._thread.join(10)
+    last = reporting.state()
+    check("happy path counts the new file", last.get("new") == 1, last)
+    check("happy path counts the changed file", last.get("changed") == 1, last)
+    check("happy path reports no failures", last.get("failed") == 0, last)
+    check("both files landed in the overlay",
+          sorted(os.listdir(fresh)) == ["newone.svg", "plex.svg"], os.listdir(fresh))
+
     try:
         store._write("../escape.svg", b"x")
         check("_write refuses a traversing name", False, "no exception raised")
