@@ -1,0 +1,20 @@
+services:
+  firehome:
+    build: .
+    image: firehome:local
+    container_name: firehome
+    restart: unless-stopped
+    ports:
+      # Reachable from the LAN, never from the internet. Set FIREHOME_BIND to a
+      # specific LAN address (e.g. 192.168.1.50) to pin it to one interface, or
+      # to 127.0.0.1 for this host only. nginx additionally rejects any client
+      # outside RFC1918 / loopback — see nginx.conf.
+      - "${FIREHOME_BIND:-0.0.0.0}:${FIREHOME_PORT:-8080}:80"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
