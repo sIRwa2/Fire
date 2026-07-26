@@ -164,8 +164,31 @@ if [ -n "$raster" ]; then
 else
     echo "note  no webp icons installed yet — run Check for updates to fetch them"
 fi
-# nginx constrains the filename shape, so a traversal attempt must not resolve.
-check "traversal in an icon path is refused" 404 "$(code '/icons/..%2Findex.html')"
+# nginx decodes %XX and collapses .. before matching a location — which is why
+# the {{ }} rule catches %7B%7B — so /icons/..%2Findex.html simply becomes
+# /index.html and serves the homepage. That is correct, and asserting 404 for it
+# was wrong. What has to hold is narrower and more useful: nothing outside the
+# document root is reachable, and the icons route cannot be talked into serving
+# something that is not an icon. Status codes vary (400 above the root, 404
+# otherwise), so the property under test is simply "never 200".
+# The escapes must be percent-encoded and deep enough to actually reach /.
+# curl collapses a plain ../ in the path before sending, so '/icons/../../etc/passwd'
+# leaves the client as '/etc/passwd' and tests nothing; %2F survives to the server.
+# And a two-level escape cannot climb out of the document root, so it passes
+# whatever the server does. Both mistakes were in the first version of this check,
+# which is why it is written out at length: against a deliberately naive server
+# these probes return 200 and the shallow ones do not.
+esc='..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F'
+for probe in "/icons/${esc}etc%2Fpasswd" "/icons/${esc}etc%2Fhostname" \
+             "/icons/..%2F..%2Fnginx.conf"; do
+    got=$(code "$probe")
+    if [ "$got" = "200" ]; then
+        bad "path escape refused: $probe" "returned 200"
+    else
+        ok "path escape refused: $probe ($got)"
+    fi
+done
+check "the icons route will not serve a non-icon" 404 "$(code '/icons/index.html')"
 if printf '%s' "$icons" | grep -q '"running"'; then
     ok "icon updater reports status"
 else
