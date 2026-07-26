@@ -130,14 +130,15 @@ actually bite you.
   tree API reported — but that only proves you got what GitHub served, not that
   it is benign. Pinning a commit instead is a small change to `api/icons.py` if
   you later want a review step.
-- **SVGs are active content.** They render through `<img>`, which never executes
-  script, and `/icons/` is served under its own `default-src 'none'; sandbox`
-  policy. A scripted icon still would not run, but the reason it cannot is a
-  header, not the file being harmless.
+- **SVGs are active content** (the rasters are not). They render through `<img>`,
+  which never executes script, and `/icons/` is served under its own
+  `default-src 'none'; sandbox` policy. A scripted icon still would not run, but
+  the reason it cannot is a header, not the file being harmless.
 - **Update runs are unauthenticated too**, so anyone on the LAN can make the
-  container fetch from GitHub. Concurrent runs are refused, downloads are capped
-  at 512 KB per file and 6000 files, and nothing outside a flat
-  `[A-Za-z0-9._-]+\.svg` shape is ever written.
+  container fetch from GitHub — and the first run pulls ~690 raster files, around
+  28 MB. Concurrent runs are refused, downloads are capped at 1 MB per file and
+  6000 files, and nothing outside a flat `[A-Za-z0-9._-]+\.(svg|webp|png)` shape
+  is ever written.
 
 ### The page itself
 
