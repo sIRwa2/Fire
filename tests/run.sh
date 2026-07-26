@@ -131,8 +131,8 @@ print("ok    placeholder apps, bookmarks and URL hint emptied")
 
 # The flat add buttons must be unconditional: scoping them to :only-child meant
 # the outline and tinted square came back the moment an app was added.
-assert ".add-app,.new-cat{border-color:transparent!important}" in tpl, \
-    "add-button outline is not cleared unconditionally"
+assert ".add-app,.new-cat{border-color:transparent!important;outline:none!important}" in tpl, \
+    "add-button border and focus ring are not both cleared unconditionally"
 assert ".add-app span,.new-cat span{background:none!important}" in tpl, \
     "the + glyph's background is not cleared unconditionally"
 assert ":only-child" not in tpl.split(".add-app,.new-cat{")[0][-400:], \

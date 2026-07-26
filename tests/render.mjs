@@ -110,6 +110,7 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
         boxSizing: cs('.page-wrap', 'boxSizing'),
         headerMargin: cs('.page-wrap > header', 'marginTop'),
         addBorder: cs('.add-app', 'borderTopColor'),
+        addOutline: cs('.add-app', 'outlineStyle'),
         plusBg: plus && getComputedStyle(plus).backgroundColor,
         addOpacity: cs('.add-app', 'opacity'),
         sheets: [...document.querySelectorAll('style')].length,
@@ -128,8 +129,26 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     check(`${label}: margin is 5% of the viewport`, Math.abs(s.wrapMargin - 1504 * 0.05) < 2,
       s.wrapMargin);
     check(`${label}: header dropped 50px`, s.headerMargin === '50px', s.headerMargin);
-    check(`${label}: add button has no outline`, transparent(s.addBorder), s.addBorder);
+    check(`${label}: add button has no border`, transparent(s.addBorder), s.addBorder);
+    check(`${label}: add button has no focus ring at rest`, s.addOutline === 'none', s.addOutline);
     check(`${label}: + glyph has no background`, transparent(s.plusBg), s.plusBg);
+
+    // The focus ring is a separate property from the border and survived the
+    // border fix. It has to stay gone through a real click and after a keyboard
+    // press has put the browser into keyboard modality — that is what makes
+    // :focus-visible match again and brought the ring back.
+    await page.click('.add-app');
+    await page.waitForTimeout(300);
+    const ringOnClick = await page.evaluate(
+      () => getComputedStyle(document.querySelector('.add-app')).outlineStyle
+    );
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    const ringAfterKey = await page.evaluate(
+      () => getComputedStyle(document.querySelector('.add-app')).outlineStyle
+    );
+    check(`${label}: no focus ring after a mouse click`, ringOnClick === 'none', ringOnClick);
+    check(`${label}: no focus ring after a key press`, ringAfterKey === 'none', ringAfterKey);
     check(`${label}: no external requests`, external.length === 0, external[0]);
     check(`${label}: no failed requests`, broken.length === 0, broken[0]);
     if (populated) {

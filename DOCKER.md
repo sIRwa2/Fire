@@ -81,12 +81,27 @@ curl -X DELETE http://<host-lan-ip>:8080/api/config
 
 ### The two "add" buttons
 
-`ADD_BUTTON_CSS` clears the dashed outline and the tinted square behind the `+`,
-**unconditionally**. This was originally scoped to `:only-child` on the theory
-that the outline reads as an "add slot" beside real cards — which meant the
-styling silently reverted the moment an app was added. The outline goes via
-`border-color: transparent` rather than `border: none` so the box keeps its exact
-size.
+`ADD_BUTTON_CSS` clears the tinted square behind the `+` and **both** things that
+draw an edge, unconditionally:
+
+- **`border`** — the dashed 1px accent outline in the inline style. Cleared with
+  `border-color: transparent` rather than `border: none`, so the box keeps its
+  exact size.
+- **`outline`** — the browser's focus ring. A different property, which the page
+  only resets for `input`, so these buttons kept theirs. This is why an outline
+  survived the border fix: clicking a button focuses it, and it stays focused
+  behind the dialog and after it closes.
+
+Suppressing the ring for pointer focus only
+(`:focus:not(:focus-visible)`) is the accessible version and is not enough here —
+typing in the dialog puts the browser in keyboard modality, so when focus returns
+to the button it matches `:focus-visible` and the ring reappears. It is removed
+outright instead, which costs keyboard users their focus indicator on these two
+buttons; the page already makes the same trade for every `input`. The accessible
+variant is in the comment above `ADD_BUTTON_CSS`.
+
+Scoping this to `:only-child` was the original mistake: it meant the styling
+reverted the moment an app was added.
 
 `EMPTY_STATE_CSS` keeps only the visibility and the `EMPTY_ADD_BUTTON_OFFSET`
 (24px) drop scoped to the empty dashboard: once apps exist, `.add-app` shares a

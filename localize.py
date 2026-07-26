@@ -105,27 +105,35 @@ URL_HINT_NEW = 'placeholder=\\"URL\\"'
 # How far the two "add" buttons sit below their heading on an empty dashboard.
 EMPTY_ADD_BUTTON_OFFSET = "24px"
 
-# Presentation of the two "add" buttons on an empty dashboard.
+# Flat "add" buttons: no outline of either kind, no tinted square behind the +.
 #
-# Everything here is scoped to :only-child — the empty case — deliberately. Once
-# apps exist, .add-app is a grid item sitting alongside real cards, where the
-# dashed outline reads as an "add slot" and a top margin would knock it out of
-# alignment with its row. Drop the :only-child qualifiers to make it
-# unconditional.
-#
-# sc-for and sc-if compile to React Fragments, which render no DOM node, so an
-# empty list leaves the button as the only child — which is what makes
-# :only-child identify the empty case exactly. The bookmarks button sits one
-# level deeper, inside a <div>.
-# Flat "add" buttons: no dashed outline, no tinted square behind the + glyph.
-#
-# Unconditional. This was originally scoped to the empty dashboard on the theory
-# that the outline reads as an "add slot" next to real cards, but that meant the
+# Unconditional. This was first scoped to the empty dashboard on the theory that
+# the dashed border reads as an "add slot" next to real cards, but that meant the
 # styling silently reverted the moment an app was added. border-color rather than
-# border:none so the box keeps its exact size. The label span has no background
-# of its own, so applying it to every span is safe.
+# border:none so the box keeps its exact size, and the label span has no
+# background of its own so applying that to every span is safe.
+#
+# Two separate things draw an edge on these buttons:
+#
+#   border  — the dashed 1px accent outline in their inline style.
+#   outline — the browser's focus ring. A different property, which the page only
+#             resets for input, so the buttons keep theirs.
+#
+# The focus ring is why an outline survived the border fix: clicking a button
+# focuses it, and it stays focused behind the dialog and after it closes.
+#
+# Suppressing it only for pointer focus (:focus:not(:focus-visible)) is the
+# accessible version, and it is not enough here — typing in the dialog puts the
+# browser in keyboard modality, so when focus returns to the button it matches
+# :focus-visible and the ring reappears. Removing it outright is the only thing
+# that matches "no outline" for real. That does cost keyboard users their focus
+# indicator on these two buttons; the page already makes the same trade for every
+# input. For the accessible variant instead:
+#
+#   .add-app:focus:not(:focus-visible),.new-cat:focus:not(:focus-visible)
+#   {outline:none!important}
 ADD_BUTTON_CSS = (
-    ".add-app,.new-cat{border-color:transparent!important}"
+    ".add-app,.new-cat{border-color:transparent!important;outline:none!important}"
     ".add-app span,.new-cat span{background:none!important}"
 )
 
@@ -292,8 +300,8 @@ def patch_template(html: str) -> str:
     tag = (
         HEAD_MARKUP
         + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + ADD_BUTTON_CSS
-        + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS + ICON_TILE_CSS + TOUCH_CSS
-        + "</style>"
+        + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
+        + ICON_TILE_CSS + TOUCH_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
     )
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")
