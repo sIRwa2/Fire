@@ -117,19 +117,46 @@ EMPTY_ADD_BUTTON_OFFSET = "24px"
 # empty list leaves the button as the only child — which is what makes
 # :only-child identify the empty case exactly. The bookmarks button sits one
 # level deeper, inside a <div>.
+# Flat "add" buttons: no dashed outline, no tinted square behind the + glyph.
+#
+# Unconditional. This was originally scoped to the empty dashboard on the theory
+# that the outline reads as an "add slot" next to real cards, but that meant the
+# styling silently reverted the moment an app was added. border-color rather than
+# border:none so the box keeps its exact size. The label span has no background
+# of its own, so applying it to every span is safe.
+ADD_BUTTON_CSS = (
+    ".add-app,.new-cat{border-color:transparent!important}"
+    ".add-app span,.new-cat span{background:none!important}"
+)
+
+# The dashed outline was the only thing marking the buttons out, so with it gone
+# they need to be reachable. Kept to the empty dashboard: once apps exist,
+# .add-app is a grid item sharing a row with real cards, and a top margin would
+# knock it out of alignment with them.
 EMPTY_STATE_CSS = (
-    # Both buttons are hover-revealed (opacity:0 until their grid is hovered),
-    # so without this an emptied dashboard renders as a blank page.
     ".app-grid .add-app:only-child,"
     ".bm-grid > div:only-child .new-cat{"
     "opacity:1!important;"
-    # border-color, not border:none, so the box keeps its exact size.
-    "border-color:transparent!important;"
     "margin-top:" + EMPTY_ADD_BUTTON_OFFSET + "!important}"
-    # The tinted square behind the + glyph. The label span alongside it has no
-    # background of its own, so this is safe to apply to both.
-    ".app-grid .add-app:only-child span,"
-    ".bm-grid > div:only-child .new-cat span{background:none!important}"
+)
+
+# The page reveals these two buttons with
+#
+#     .app-grid:hover .add-app,.add-app:focus-visible{opacity:1}
+#
+# and a selector list is discarded whole if any part of it fails to parse. Safari
+# only learned :focus-visible in 15.4, so on anything older both of these rules
+# are dropped and the buttons can never be revealed — while .hdr-actions and
+# .cat-del, whose rules use no :focus-visible, keep working. Restating the hover
+# half on its own makes the reveal independent of that support. Higher
+# specificity than the opacity:0 base rule, so no !important needed.
+HOVER_FALLBACK_CSS = (
+    ".app-grid:hover .add-app{opacity:1}"
+    ".bm-grid:hover .new-cat{opacity:1}"
+    # Belt and braces: where :focus-visible is genuinely unsupported, stop
+    # relying on hover at all rather than leaving the controls unreachable.
+    "@supports not selector(:focus-visible){"
+    ".app-grid .add-app,.bm-grid .new-cat{opacity:1!important}}"
 )
 
 
@@ -264,8 +291,9 @@ def patch_template(html: str) -> str:
     shim = open(SHIM_PATH, encoding="utf-8").read()
     tag = (
         HEAD_MARKUP
-        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + EMPTY_STATE_CSS
-        + ICON_TILE_CSS + TOUCH_CSS + "</style>"
+        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + ADD_BUTTON_CSS
+        + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS + ICON_TILE_CSS + TOUCH_CSS
+        + "</style>"
         + "<script>\n" + shim + "\n</script>"
     )
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")

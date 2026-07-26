@@ -79,21 +79,35 @@ fireHomeStorage.reset()
 curl -X DELETE http://<host-lan-ip>:8080/api/config
 ```
 
-Both "add" buttons are hover-revealed (`opacity: 0` until their grid is
-hovered), which would leave a cleared dashboard looking like an empty page.
-`EMPTY_STATE_CSS` handles their empty-state appearance: forced visible, dashed
-outline cleared, the tinted square behind the `+` removed, and dropped
-`EMPTY_ADD_BUTTON_OFFSET` (24px) below the heading. The outline goes via
+### The two "add" buttons
+
+`ADD_BUTTON_CSS` clears the dashed outline and the tinted square behind the `+`,
+**unconditionally**. This was originally scoped to `:only-child` on the theory
+that the outline reads as an "add slot" beside real cards — which meant the
+styling silently reverted the moment an app was added. The outline goes via
 `border-color: transparent` rather than `border: none` so the box keeps its exact
 size.
 
-All of it is scoped to `:only-child`, i.e. the empty dashboard. Once apps exist,
-`.add-app` is a grid item sitting alongside real cards, where the dashed outline
-reads as an "add slot" and a top margin would knock it out of alignment with its
-row. Drop the `:only-child` qualifiers to make it unconditional. `sc-for` and
-`sc-if` compile to React Fragments, which render no DOM node, so an empty list
-leaves the button as the only child — that is what makes `:only-child` identify
-the empty case exactly.
+`EMPTY_STATE_CSS` keeps only the visibility and the `EMPTY_ADD_BUTTON_OFFSET`
+(24px) drop scoped to the empty dashboard: once apps exist, `.add-app` shares a
+grid row with real cards and a top margin would knock it out of alignment.
+`sc-for` and `sc-if` compile to React Fragments, which render no DOM node, so an
+empty list leaves the button as the only child — that is what makes `:only-child`
+identify the empty case exactly.
+
+`HOVER_FALLBACK_CSS` makes the reveal survive an old browser. The page writes
+
+```css
+.app-grid:hover .add-app,.add-app:focus-visible{opacity:1}
+```
+
+and a selector list is discarded *whole* if any part fails to parse. Safari only
+learned `:focus-visible` in 15.4, so on anything older both of these rules are
+dropped and the two buttons can never be revealed — while `.hdr-actions` and
+`.cat-del`, whose rules use no `:focus-visible`, keep working. Restating the hover
+half on its own makes the reveal independent of that support, and an
+`@supports not selector(:focus-visible)` block stops relying on hover at all
+where it is genuinely missing.
 
 The add/edit dialog's URL field is reduced to a bare `URL` placeholder. The
 dialog has no labels — every field relies on its placeholder — so removing the
@@ -121,13 +135,26 @@ through the proxy and survives an `api` restart. Non-destructive: the write uses
 a scratch key and removes it afterwards. Docker-dependent checks are skipped
 when `docker` isn't on `PATH`.
 
-Two things it can't check, because they need eyes:
+`tests/render.mjs` covers what `verify.sh` cannot: whether the page actually
+*looks* right. It drives the deployed URL in real WebKit — the engine Safari uses
+— and in Chromium, asserting the computed layout, that every `<style>` attached,
+that the add buttons have no outline in both the empty and populated states, that
+hover reveals them, and that nothing is requested off-host. Optional, since it
+needs a few hundred MB of browsers:
 
-- that the dashboard renders and its icons appear
-- that config follows you to a second browser or device
+```sh
+npm install playwright
+npx playwright install --with-deps webkit chromium
+node tests/render.mjs http://192.168.0.108:8080
+```
 
-For those: open the page, confirm no amber banner, change something, reload,
-then load the same URL on your phone.
+It is non-destructive: the config is stubbed per-page rather than written, so the
+deployed dashboard is neither read nor modified. Seeding `localStorage` would not
+work — with the service reachable the shim treats the server as authoritative —
+and the shim's first read is a synchronous XHR, which WebKit does not put through
+route interception, so that one call is stubbed in-page.
+
+Still needs eyes: that config follows you to a second physical device.
 
 ## Self-containment
 
@@ -190,10 +217,10 @@ pointer machines keep the hover-reveal, and an iPad with a trackpad reports
 per-card edit/delete buttons are always visible, which is the only way to reach
 them at all.
 
-## The "Unpacking…" message
+## Build-time extraction
 
-`firehome.html` is a self-extracting bundle, and that message is its progress
-indicator. It appears on every load because the work is redone every load:
+`firehome.html` is a self-extracting bundle. Served as-is, it showed an
+"Unpacking…" message on every load because the work was redone on every load:
 
 | | |
 | --- | --- |
@@ -205,19 +232,43 @@ indicator. It appears on every load because the work is redone every load:
 | — bundled icons | 24 svg, 22 KB |
 | template | 120 KB, with 43 uuid substitutions over it |
 
-On each load the browser base64-decodes and gunzips all 43 resources, mints a
-blob URL for each, string-replaces every uuid across the 120 KB template, parses
-the result, swaps `documentElement`, then re-creates and re-runs every script.
-None of it is cacheable — the assets exist only as blob URLs minted inside that
+Each load base64-decoded and gunzipped all 43 resources, minted a blob URL for
+each, string-replaced every uuid across the 120 KB template, parsed the result,
+swapped `documentElement`, then re-created and re-ran every script. None of it
+was cacheable, because the assets existed only as blob URLs minted inside that
 page.
 
-Doing the extraction at build time instead would remove the message entirely and
-make refreshes fast: `localize.py` would write the 43 resources as real files
-under `/assets/`, rewrite the uuid references to those paths, and emit plain
-static HTML. The page would drop to roughly its 120 KB template, the fonts and
-JavaScript would get normal long-lived caching, and the runtime would parse the
-document once like any ordinary page. The 24 bundled icons could be dropped
-outright, since `svg/` already serves all 3222 locally.
+`extract.py` now does that work at build time, so the browser gets a plain
+document: **128 KB of HTML plus 19 real asset files**, parsed once like any other
+page, with the fonts and JavaScript cached for a year under `/assets/`. The 24
+bundled icons are dropped entirely — `svg/` already serves all 3222 at `/icons/`.
+
+The fonts turn out to be the biggest win. The default theme uses system fonts, so
+the 402 KB of Inter woff2 is now fetched only if a theme actually asks for it,
+where the bundle decoded all of it on every single load regardless.
+
+Two things `extract.py` guards, because getting either wrong fails quietly:
+
+- **The React entries in `window.__resources`.** The runtime resolves its own
+  React and react-dom through that map and falls back to a CDN URL when an entry
+  is missing:
+
+  ```js
+  function cdnScriptFor(url, sri) {
+    const v = window.__resources ? window.__resources[url] : void 0;
+    return typeof v === "string" && v ? { src: v } : { src: url, integrity: sri };
+  }
+  ```
+
+  so dropping them would make the page inject a `<script>` pointing at
+  unpkg.com.
+- **Unresolved uuids.** Any manifest uuid still in the output means a reference
+  that was not rewritten, and the extraction aborts. Nested page bundles are
+  refused outright rather than emitted with dead frames.
+
+The runtime needs no help with ordering: it boots off
+`document.readyState !== "loading" ? boot() : addEventListener("DOMContentLoaded", boot)`,
+so it waits for `<x-dc>` to exist even though its script is in `<head>`.
 
 ## Icon picker
 

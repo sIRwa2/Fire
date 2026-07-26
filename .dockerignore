@@ -1,6 +1,7 @@
 *
 !firehome.html
 !localize.py
+!extract.py
 !storage-shim.js
 !nginx.conf
 !svg/

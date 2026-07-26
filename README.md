@@ -32,12 +32,20 @@ FIREHOME_BIND=192.168.1.50 FIREHOME_PORT=80 docker compose up -d
 ./verify.sh                              # container + http + config-store checks
 BASE=http://192.168.0.108:8080 ./verify.sh
 ./tests/run.sh                           # build-time checks; python3 + node, no Docker
+node tests/render.mjs http://192.168.0.108:8080   # real WebKit + Chromium; needs playwright
 ```
 
 `verify.sh` is non-destructive — its config write uses a scratch key and removes
-it afterwards. Neither script can confirm the page *renders*: for that, open it,
-check no amber storage banner appears, change something, reload, and load the
-same URL on a second device.
+it afterwards. `tests/render.mjs` is the one that confirms the page actually
+*renders*, in Safari's own engine; it stubs the config per-page so the deployed
+dashboard is neither read nor written. It needs playwright:
+
+```sh
+npm install playwright && npx playwright install --with-deps webkit chromium
+```
+
+Still worth doing by hand: load the same URL on a second device and check your
+config follows you.
 
 ## Starting clean
 
@@ -63,13 +71,15 @@ Then reload. The dashboard's own "Reset to defaults" button now also empties
 rather than restoring demo data, and writes through to the server so it applies
 on every device.
 
-The "Add application" and "New category" buttons are hover-revealed, which would
-leave an empty dashboard looking blank. On an empty grid they're forced visible,
-stripped of their dashed outline and of the tinted square behind the `+`, and
-dropped `EMPTY_ADD_BUTTON_OFFSET` (24px) below their heading. That styling is
-scoped to the empty state: once apps exist, `.add-app` is a grid item beside real
-cards, where the outline reads as an "add slot" and a top margin would break row
+The "Add application" and "New category" buttons have no dashed outline and no
+tinted square behind the `+`, in every state. Only their visibility and the
+`EMPTY_ADD_BUTTON_OFFSET` (24px) drop are scoped to an empty grid — once apps
+exist, `.add-app` shares a row with real cards and a top margin would break the
 alignment.
+
+They're otherwise hover-revealed, and that reveal is made robust against old
+Safari: the page pairs `:hover` with `:focus-visible` in one selector list, which
+Safari below 15.4 discards whole. See [DOCKER.md](DOCKER.md#the-two-add-buttons).
 
 The add/edit dialog's URL field keeps a bare `URL` placeholder. The dialog has no
 labels — every field relies on its placeholder — so dropping the attribute
@@ -80,7 +90,8 @@ outright would leave an unlabelled box.
 | Path | |
 | --- | --- |
 | `firehome.html` | The exported page bundle. Source of truth; re-export overwrites it. |
-| `localize.py` | Build-time patches: removes the CDN/font dependencies, injects the storage shim, favicon links, title and layout CSS. Fails loudly if a re-export moves what it patches. |
+| `localize.py` | Build-time patches: removes the CDN/font dependencies, injects the storage shim, favicon links, title and layout CSS, empties the demo content. Fails loudly if a re-export moves what it patches. |
+| `extract.py` | Unpacks the self-extracting bundle into plain HTML + `assets/`, so the browser never runs the loader. |
 | `storage-shim.js` | Redirects the page's `localStorage` config to the config service. |
 | `api/server.py` | The config store. Stdlib only. |
 | `nginx.conf`, `Dockerfile`, `docker-compose.yml` | Serving and orchestration. |

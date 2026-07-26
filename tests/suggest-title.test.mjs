@@ -7,11 +7,7 @@
 import fs from 'node:fs';
 
 const built = process.argv[2];
-const tpl = JSON.parse(
-  /<script type="__bundler\/template">([\s\S]*?)<\/script>/.exec(
-    fs.readFileSync(built, 'utf8')
-  )[1]
-);
+const tpl = fs.readFileSync(built, 'utf8');
 
 const grab = (name) =>
   new RegExp('  ' + name + ' = (\\(e\\) => \\{[\\s\\S]*?\\n  \\});').exec(tpl)[1];

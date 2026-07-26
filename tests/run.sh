@@ -56,32 +56,42 @@ for src in sources:
     else:
         shutil.copy2(full, stage)
 
-result = subprocess.run(
-    [sys.executable, "localize.py", "firehome.html", "index.html"],
-    cwd=stage, capture_output=True, text=True,
-)
-if result.returncode != 0:
-    print(result.stdout + result.stderr)
-    sys.exit("localize.py failed with only the files the Dockerfile copies")
-print("ok    localize.py runs with only those files")
+for step in (["localize.py", "firehome.html", "patched.html"],
+             ["extract.py", "patched.html", "dist"]):
+    result = subprocess.run([sys.executable] + step, cwd=stage,
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        print(result.stdout + result.stderr)
+        sys.exit("%s failed with only the files the Dockerfile copies" % step[0])
+    print("ok    %s runs with only those files" % step[0])
 PY
 
-python3 - "$ROOT" "$WORK/stage/index.html" <<'PY'
+python3 - "$ROOT" "$WORK/stage/dist" <<'PY'
 import json, re, sys
-root, built = sys.argv[1], sys.argv[2]
-html = open(built, encoding="utf-8").read()
+import os
+root, dist = sys.argv[1], sys.argv[2]
+tpl = html = open(os.path.join(dist, "index.html"), encoding="utf-8").read()
 
-tpl = json.loads(re.search(r'<script type="__bundler/template">(.*?)</script>',
-                           html, re.S).group(1))
-print("ok    template is still valid JSON (%d chars)" % len(tpl))
+assert html.lstrip().startswith("<!DOCTYPE html>"), "extracted page lost its doctype"
+assert "__bundler" not in html, "extracted page still carries bundler islands"
+assert "Unpacking" not in html, "extracted page still carries the loader UI"
+print("ok    extracted page is plain HTML (%.1f KB)" % (len(html) / 1024))
+
+# Nothing may be left pointing at a blob-minted resource, and the React entries
+# must be present or the runtime injects a script tag aimed at unpkg.com.
+assets = sorted(os.listdir(os.path.join(dist, "assets")))
+assert len(assets) >= 3, "expected the extracted JavaScript in assets/"
+for name in assets:
+    assert name in html or name.endswith(".woff2"), "orphan asset: %s" % name
+resmap = re.search(r"window\.__resources = (\{.*?\});", html).group(1)
+for url in ("react.production.min.js", "react-dom.production.min.js"):
+    assert url in resmap, "__resources lost %s; runtime would fetch the CDN" % url
+assert "/assets/" in resmap
+print("ok    %d assets emitted, React mapped locally" % len(assets))
 
 shim = open(root + "/storage-shim.js", encoding="utf-8").read()
-got = re.search(r"<script>\n(.*?)\n</script>", tpl, re.S).group(1)
-assert got == shim, "shim did not survive escaping intact"
-print("ok    storage-shim.js round-trips byte-identically")
-
-assert html.count("</script>") == 5, "injection broke out of the template tag"
-print("ok    outer script tags intact")
+assert shim in html, "storage-shim.js is not present verbatim"
+print("ok    storage-shim.js embedded intact")
 
 # The exported template carries no title or icon links, so a missing injection
 # means a blank tab icon and a /favicon.ico probe on every load.
@@ -119,14 +129,21 @@ assert tpl.count("example.com") == 0, "example.com is still referenced somewhere
 assert 'placeholder="URL"' in tpl, "the URL field lost its placeholder entirely"
 print("ok    placeholder apps, bookmarks and URL hint emptied")
 
-# Empty-state presentation of the two add buttons: visible, no outline, no
-# tinted square behind the +, and dropped below the heading.
-for rule in ("opacity:1!important", "border-color:transparent!important",
-             "margin-top:24px!important"):
-    assert rule in tpl, "empty-state button CSS missing: %s" % rule
-assert ".bm-grid > div:only-child .new-cat span{background:none!important}" in tpl, \
-    "the + glyph's background is not cleared"
-print("ok    add-button empty-state styling injected")
+# The flat add buttons must be unconditional: scoping them to :only-child meant
+# the outline and tinted square came back the moment an app was added.
+assert ".add-app,.new-cat{border-color:transparent!important}" in tpl, \
+    "add-button outline is not cleared unconditionally"
+assert ".add-app span,.new-cat span{background:none!important}" in tpl, \
+    "the + glyph's background is not cleared unconditionally"
+assert ":only-child" not in tpl.split(".add-app,.new-cat{")[0][-400:], \
+    "outline removal looks re-scoped to the empty state"
+# Only the visibility and the offset stay scoped to the empty dashboard.
+assert "margin-top:24px!important" in tpl, "empty-state offset missing"
+# The reveal must not depend on :focus-visible: the page pairs the two in one
+# selector list, which older Safari drops whole.
+assert ".app-grid:hover .add-app{opacity:1}" in tpl, "hover fallback missing"
+assert "@supports not selector(:focus-visible)" in tpl, "focus-visible fallback missing"
+print("ok    add-button styling unconditional, hover reveal made robust")
 
 # The picker tiles are targeted by data-icon, not by the runtime-generated .scpx
 # class, whose base36 suffix moves whenever render order changes.
@@ -153,7 +170,7 @@ PY
 
 echo
 echo "== icon -> title suggestion =="
-node "$ROOT/tests/suggest-title.test.mjs" "$WORK/stage/index.html"
+node "$ROOT/tests/suggest-title.test.mjs" "$WORK/stage/dist/index.html"
 
 echo
 echo "== storage-shim.js =="
