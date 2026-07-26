@@ -52,6 +52,11 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:svg|webp|png)$")
 
 # Raised past 512 KB because one real icon (napcat.webp, 661 KB) exceeded it.
 MAX_ICON_BYTES = 1024 * 1024
+# nginx serves these files from a different user (its worker is uid 101; this
+# service runs as 10001), so they have to be world-readable. tempfile.mkstemp
+# creates 0600 by design and os.replace preserves it, which left every downloaded
+# icon unreadable to nginx — a 403 and a broken thumbnail for each one.
+ICON_MODE = 0o644
 MAX_DOWNLOADS = 6000        # backstop against a malformed tree response
 HTTP_TIMEOUT = 30
 # The first run after adding raster fallbacks fetches ~690 files. Sequentially
@@ -142,6 +147,27 @@ class IconStore:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(state, fh, indent=2, sort_keys=True)
         os.replace(tmp, self.state_path)
+
+    def ensure_readable(self):
+        """Make sure everything in the overlay is readable by nginx.
+
+        Repairs files written before ICON_MODE existed, which were 0600 and so
+        served as 403s. Runs at startup and after an update rather than requiring
+        the volume to be recreated. Returns how many needed fixing.
+        """
+        fixed = 0
+        for name in self._scan(self.overlay):
+            path = os.path.join(self.overlay, name)
+            try:
+                mode = os.stat(path).st_mode & 0o777
+                if not mode & 0o044:
+                    os.chmod(path, ICON_MODE)
+                    fixed += 1
+            except OSError:
+                pass
+        if fixed:
+            self.log("icons: made %d file(s) readable to nginx" % fixed)
+        return fixed
 
     def writable(self):
         """Whether the overlay can actually be written to.
@@ -312,6 +338,7 @@ class IconStore:
             result["error"] = "%s: %s" % (type(exc).__name__, exc)
             self.log("icons: update failed: %r" % (exc,))
 
+        self.ensure_readable()
         try:
             self._save_state(result)
         except OSError as exc:
@@ -327,6 +354,8 @@ class IconStore:
                 fh.write(data)
                 fh.flush()
                 os.fsync(fh.fileno())
+            # Before the rename, so the file is never visible at 0600.
+            os.chmod(tmp, ICON_MODE)
             os.replace(tmp, os.path.join(self.overlay, name))
         except BaseException:
             try:

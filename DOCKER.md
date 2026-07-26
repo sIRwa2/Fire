@@ -428,7 +428,15 @@ docker compose up -d --build
 
 `GET /api/icons` reports `writable`, `verify.sh` checks it, the settings row says
 so before you click, and an update refuses up front with the cause rather than
-failing once per file. If the bind mount is missing the updater degrades rather than
+failing once per file.
+
+**File modes matter for the same reason.** nginx's worker is uid 101 and this
+service is 10001, so downloaded icons have to be world-readable. `tempfile.mkstemp`
+creates 0600 by design and `os.replace` preserves it, which made every icon a 403
+and a broken thumbnail even though the download had succeeded. Files are now
+chmodded to 0644 before the rename, and anything left at 0600 by an earlier
+version is repaired in place at startup — so an existing volume recovers on
+restart without being recreated. If the bind mount is missing the updater degrades rather than
 crashing — it just sees no baked files and would fetch everything.
 
 ```

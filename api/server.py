@@ -248,6 +248,9 @@ def main():
     _icons = icons_mod.IconStore(ICONS_DIR, BAKED_ICONS, ICONS_STATE, log=log)
     log("icons: overlay=%s baked=%s (%d available)"
         % (ICONS_DIR, BAKED_ICONS, len(_icons.names())))
+    # Repairs icons written before they were made world-readable, so an existing
+    # volume recovers on restart instead of needing to be recreated.
+    _icons.ensure_readable()
     server = ThreadingHTTPServer(("", PORT), Handler)
     server.daemon_threads = True
     log("firehome-config listening on :%d, data=%s" % (PORT, DATA_DIR))

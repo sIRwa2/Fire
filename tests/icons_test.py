@@ -156,6 +156,23 @@ try:
     check("rasters are offered with their extension",
           "rasteronly.webp" in offered and "pngonly.png" in offered, offered)
 
+    # nginx reads these as a different user, so every written file has to be
+    # world-readable. mkstemp creates 0600 and os.replace keeps it, which is what
+    # made every downloaded icon a 403.
+    modes = sorted(oct(os.stat(os.path.join(fresh, n)).st_mode & 0o777)
+                   for n in os.listdir(fresh))
+    check("downloaded icons are world-readable", set(modes) == {"0o644"}, modes)
+
+    # And files left at 0600 by an older version are repaired in place, so an
+    # existing volume recovers without being recreated.
+    stale = os.path.join(fresh, "plex.svg")
+    os.chmod(stale, 0o600)
+    fixed = icons_mod.IconStore(fresh, baked, os.path.join(work, "s6.json"),
+                               log=lambda m: None).ensure_readable()
+    check("a 0600 icon is repaired", fixed == 1, fixed)
+    check("the repaired icon is readable",
+          os.stat(stale).st_mode & 0o044 != 0, oct(os.stat(stale).st_mode & 0o777))
+
     # An unusable overlay must fail the run once with the cause, not once per
     # file. Simulated with a path whose parent is a file, so it fails for every
     # user including root.
