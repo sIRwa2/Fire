@@ -410,7 +410,25 @@ Two directories are involved:
 | `firehome-icons` volume | writable overlay. Updates land here; nginx serves it *in front of* the baked set. |
 
 So an update never mutates the image, and `docker compose down -v` reverts to the
-shipped set. If the bind mount is missing the updater degrades rather than
+shipped set.
+
+**Volume ownership is load bearing here.** The api runs as uid 10001, and a named
+volume mounted where the image has no directory is created *root-owned* — which
+that user cannot write to, so every download fails `EACCES` while the config store,
+on the correctly-initialised `/data` volume, carries on working. The api image
+therefore creates `/data/icons` explicitly so a fresh volume inherits app
+ownership. A volume created before that fix stays root-owned and has to be
+recreated; it only holds re-downloadable icons, so nothing is lost:
+
+```sh
+docker compose down
+docker volume rm "$(basename "$PWD")_firehome-icons"
+docker compose up -d --build
+```
+
+`GET /api/icons` reports `writable`, `verify.sh` checks it, the settings row says
+so before you click, and an update refuses up front with the cause rather than
+failing once per file. If the bind mount is missing the updater degrades rather than
 crashing — it just sees no baked files and would fetch everything.
 
 ```

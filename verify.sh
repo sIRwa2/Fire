@@ -194,6 +194,15 @@ if printf '%s' "$icons" | grep -q '"running"'; then
 else
     bad "icon updater reports status"
 fi
+# A named volume mounted where the image has no directory comes out root-owned,
+# which the unprivileged api cannot write to — every download then fails EACCES.
+if printf '%s' "$icons" | grep -q '"writable": *true'; then
+    ok "icon storage is writable"
+else
+    bad "icon storage is writable" \
+        "recreate the volume: docker compose down && docker volume rm \
+\$(basename \$PWD)_firehome-icons && docker compose up -d --build"
+fi
 
 if have docker; then
     snaps=$($COMPOSE exec -T api sh -c 'ls /data/history 2>/dev/null | wc -l' 2>/dev/null | tr -d ' \r')

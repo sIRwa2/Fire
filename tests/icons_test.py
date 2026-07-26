@@ -156,6 +156,25 @@ try:
     check("rasters are offered with their extension",
           "rasteronly.webp" in offered and "pngonly.png" in offered, offered)
 
+    # An unusable overlay must fail the run once with the cause, not once per
+    # file. Simulated with a path whose parent is a file, so it fails for every
+    # user including root.
+    blocker = os.path.join(work, "not-a-dir")
+    open(blocker, "wb").write(b"x")
+    stuck = icons_mod.IconStore(os.path.join(blocker, "icons"), baked,
+                               os.path.join(work, "s5.json"), log=lambda m: None)
+    check("an unusable overlay reports not writable", stuck.writable() is False)
+    check("a usable overlay reports writable", store.writable() is True)
+    calls = []
+    stuck._get = lambda *a, **k: calls.append(1) or (_ for _ in ()).throw(
+        AssertionError("should not have reached the network"))
+    stuck.start()
+    stuck._thread.join(10)
+    err = stuck.state().get("error", "")
+    check("unusable overlay fails with the cause", "cannot write to" in err, err)
+    check("unusable overlay names the fix", "docker volume rm" in err, err)
+    check("unusable overlay never hits the network", calls == [], calls)
+
     try:
         store._write("../escape.svg", b"x")
         check("_write refuses a traversing name", False, "no exception raised")

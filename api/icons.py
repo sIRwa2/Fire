@@ -143,9 +143,26 @@ class IconStore:
             json.dump(state, fh, indent=2, sort_keys=True)
         os.replace(tmp, self.state_path)
 
+    def writable(self):
+        """Whether the overlay can actually be written to.
+
+        Checked up front because the alternative is what shipped first: a
+        root-owned volume produced 690 identical EACCES failures and a "690
+        failed" summary, with the cause only visible in the container log.
+        """
+        try:
+            os.makedirs(self.overlay, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=self.overlay, prefix=".probe-")
+            os.close(fd)
+            os.unlink(tmp)
+            return True
+        except OSError:
+            return False
+
     def status(self):
         out = dict(self._progress)
         out["installed"] = len(self.names())
+        out["writable"] = self.writable()
         out["last"] = self.state()
         return out
 
@@ -191,6 +208,17 @@ class IconStore:
         started = time.time()
         result = {"checked": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
         try:
+            # Fail once, with the cause, rather than once per file.
+            if not self.writable():
+                raise PermissionError(
+                    "cannot write to %s. A named volume mounted where the image "
+                    "has no directory is created root-owned, which this "
+                    "unprivileged service cannot write to. Recreate it: "
+                    "docker compose down && docker volume rm "
+                    "<project>_firehome-icons && docker compose up -d --build"
+                    % self.overlay
+                )
+
             commit = json.loads(self._get(COMMIT_URL).decode("utf-8"))
             result["commit"] = commit.get("sha", "")[:12]
             result["commit_date"] = (

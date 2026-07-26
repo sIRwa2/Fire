@@ -373,6 +373,9 @@ ICON_UPDATE_PATCHES = tuple(
       if (Array.isArray(d.icons) && d.icons.length) {
         this.setState({ icons: d.icons, iconCount: d.count });
       }
+      if (d.status && d.status.writable === false && !this.state.iconMsg) {
+        this.setState({ iconMsg: 'icon storage is not writable' });
+      }
       return d;
     })
     .catch(() => null);
