@@ -174,6 +174,51 @@ and the wrapper has `padding-top: 50px`, which is what stops that margin
 collapsing through the parent — so the header lands 100px from the top. Since
 the header is in normal flow, the content below moves down with it.
 
+## Touch devices
+
+Every control for editing the dashboard is hover-revealed — four `:hover` rules
+in the page's own stylesheet (`.add-app`, `.hdr-actions`, `.new-cat`, `.cat-del`)
+plus two elements carrying an inline `opacity: 0` and a `style-hover` the runtime
+turns into a generated `.scpN:hover` rule (the app card's edit/delete overlay and
+the bookmark delete).
+
+A touch device has no hover, so on an iPhone or iPad none of them could be
+reached and the dashboard was effectively read-only. `TOUCH_CSS` forces them
+visible under `@media (hover: none)`, which matches exactly those devices —
+pointer machines keep the hover-reveal, and an iPad with a trackpad reports
+`hover: hover` and is likewise unaffected. The trade-off on touch is that the
+per-card edit/delete buttons are always visible, which is the only way to reach
+them at all.
+
+## The "Unpacking…" message
+
+`firehome.html` is a self-extracting bundle, and that message is its progress
+indicator. It appears on every load because the work is redone every load:
+
+| | |
+| --- | --- |
+| page on the wire | 791 KB |
+| base64 manifest payload | 636 KB |
+| decompressed to | 630 KB across 43 resources |
+| — fonts | 16 woff2, 402 KB |
+| — JavaScript | 3 files, 207 KB (React, react-dom, dc-runtime) |
+| — bundled icons | 24 svg, 22 KB |
+| template | 120 KB, with 43 uuid substitutions over it |
+
+On each load the browser base64-decodes and gunzips all 43 resources, mints a
+blob URL for each, string-replaces every uuid across the 120 KB template, parses
+the result, swaps `documentElement`, then re-creates and re-runs every script.
+None of it is cacheable — the assets exist only as blob URLs minted inside that
+page.
+
+Doing the extraction at build time instead would remove the message entirely and
+make refreshes fast: `localize.py` would write the 43 resources as real files
+under `/assets/`, rewrite the uuid references to those paths, and emit plain
+static HTML. The page would drop to roughly its 120 KB template, the fonts and
+JavaScript would get normal long-lived caching, and the runtime would parse the
+document once like any ordinary page. The 24 bundled icons could be dropped
+outright, since `svg/` already serves all 3222 locally.
+
 ## Icon picker
 
 Picking an icon suggests a Title. The names are kebab-case slugs, so

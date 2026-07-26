@@ -204,6 +204,28 @@ ICON_TILE_CSS = (
     "background:none!important;border-color:transparent!important}"
 )
 
+# Every control for editing the dashboard is hover-revealed, by one of two
+# mechanisms: four :hover rules in the page's own stylesheet (.add-app,
+# .hdr-actions, .new-cat, .cat-del) and two elements that carry an inline
+# opacity:0 plus a style-hover the runtime turns into a generated .scpN:hover
+# rule (the app card's edit/delete overlay and the bookmark delete).
+#
+# A touch device has no hover, so on iPhone/iPad none of them can be reached at
+# all — the dashboard becomes read-only. (hover: none) matches exactly those
+# devices, so pointer machines keep the hover-reveal untouched; an iPad with a
+# trackpad reports hover: hover and is likewise unaffected.
+#
+# !important is required for the two inline opacity:0 elements. The third
+# data-nodrag element, the settings close button, has no opacity of its own, so
+# including it here is a no-op. The trade-off on touch is that the per-card
+# edit/delete buttons are always visible, which is the only way to reach them.
+TOUCH_CSS = (
+    "@media (hover:none){"
+    ".app-grid .add-app,.hdr-row .hdr-actions,.bm-grid .new-cat,.bm-cat .cat-del,"
+    '[data-nodrag="1"]{opacity:1!important}'
+    "}"
+)
+
 
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
@@ -243,7 +265,7 @@ def patch_template(html: str) -> str:
     tag = (
         HEAD_MARKUP
         + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + EMPTY_STATE_CSS
-        + ICON_TILE_CSS + "</style>"
+        + ICON_TILE_CSS + TOUCH_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
     )
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")

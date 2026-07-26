@@ -134,6 +134,18 @@ assert 'data-icon="{{ ic.name }}"' in tpl, "icon tiles lost the data-icon hook"
 assert "span[data-icon],span[data-icon]:hover{" in tpl, "icon tile CSS missing"
 print("ok    icon tile styling injected")
 
+# Touch devices have no hover, which would leave every editing control
+# unreachable. Each hover-revealed hook must be covered by the (hover:none) rule.
+touch = re.search(r"@media \(hover:none\)\{(.*?)\}\}", tpl, re.S).group(1)
+for hook in (".add-app", ".hdr-actions", ".new-cat", ".cat-del", '[data-nodrag="1"]'):
+    assert hook in touch, "hover-revealed control not covered on touch: %s" % hook
+assert "opacity:1!important" in touch
+# Sanity-check that these really are the hover-revealed set in the page itself.
+for rule in (".app-grid:hover .add-app", ".hdr-row:hover .hdr-actions",
+             ".bm-grid:hover .new-cat", ".bm-cat:hover .cat-del"):
+    assert rule in tpl, "hover rule changed shape, touch fallback may be stale: %s" % rule
+print("ok    touch fallback covers every hover-revealed control")
+
 for host in ("cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"):
     assert host not in html, "%s still referenced" % host
 print("ok    no remaining external hosts")
