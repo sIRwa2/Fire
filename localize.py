@@ -133,6 +133,88 @@ EMPTY_STATE_CSS = (
 )
 
 
+# Picking an icon suggests a Title.
+#
+# The icon names are kebab-case slugs, so "home-assistant" becomes
+# "Home Assistant"; a trailing -light/-dark variant suffix is dropped so
+# "vim-dark" suggests "Vim". It stays a suggestion: a title the user typed is
+# never overwritten, and titleAuto tracks whether the current title came from a
+# previous pick so trying different icons keeps updating it.
+#
+# fieldChange clears titleAuto because any manual edit to the title means the
+# user has taken ownership of it.
+#
+# The icon grid falls back to filtering by the title when the search box is
+# empty. Left alone, an autofilled title would make the grid collapse to icons
+# matching the name at the moment of the click, which reads as a glitch — so the
+# fallback is skipped for a title that was itself autofilled. Typing a title
+# first still pre-filters the grid, and editing an existing app is unchanged.
+JS_PATCHES = (
+    (
+        "pickIcon suggests a title",
+        "  pickIcon = (e) => this.setState({ modal: { ...this.state.modal,"
+        " icon: e.currentTarget.dataset.icon } });",
+        "  pickIcon = (e) => {\\n"
+        "    const icon = e.currentTarget.dataset.icon;\\n"
+        "    const suggestion = icon.replace(/-(light|dark)$/, '').split(/[-_]+/)\\n"
+        "      .filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');\\n"
+        "    this.setState(s => {\\n"
+        "      const m = s.modal;\\n"
+        "      const suggest = !m.title.trim() || m.titleAuto;\\n"
+        "      return { modal: { ...m, icon, title: suggest ? suggestion : m.title,"
+        " titleAuto: suggest } };\\n"
+        "    });\\n"
+        "  };",
+    ),
+    (
+        "manual title edit releases the suggestion",
+        "  fieldChange = (e) => {\\n"
+        "    const f = e.currentTarget.dataset.field, v = e.currentTarget.value;\\n"
+        "    this.setState({ modal: { ...this.state.modal, [f]: v } });\\n"
+        "  };",
+        "  fieldChange = (e) => {\\n"
+        "    const f = e.currentTarget.dataset.field, v = e.currentTarget.value;\\n"
+        "    this.setState(s => ({ modal: { ...s.modal, [f]: v,"
+        " ...(f === 'title' ? { titleAuto: false } : {}) } }));\\n"
+        "  };",
+    ),
+    (
+        "an autofilled title does not re-filter the icon grid",
+        "      const q = (m.q || m.title || '').trim().toLowerCase();",
+        "      const q = (m.q || (m.titleAuto ? '' : m.title) || '').trim().toLowerCase();",
+    ),
+)
+
+# The icon-picker tiles. Their background and border come from ic.bg / ic.border,
+# which highlight the selected icon in the accent colour; the hover background
+# comes from a runtime-generated class.
+#
+# That generated class is what shows up in devtools as .scpx — createPseudoSheet
+# names them "scp" + counter.toString(36), so the suffix depends on the order
+# pseudo-styles are first rendered and shifts whenever the markup changes. It is
+# not a usable hook, hence the data-icon attribute, which is stable and specific
+# to these tiles. The generated rules are also force-!important, so beating them
+# needs both !important and higher specificity: span[data-icon]:hover is (0,2,1)
+# against .scpx:hover at (0,2,0).
+#
+# Removing these means the grid no longer marks which icon is selected. The 44px
+# preview beside the search box still shows the current pick.
+ICON_TILE_CSS = (
+    "span[data-icon],span[data-icon]:hover{"
+    "background:none!important;border-color:transparent!important}"
+)
+
+
+def apply_js_patches(body: str) -> str:
+    """Apply the behavioural patches, asserting each target appears exactly once."""
+    for name, old, new in JS_PATCHES:
+        n = body.count(old)
+        if n != 1:
+            raise ValueError("expected 1 site for %r, found %d" % (name, n))
+        body = body.replace(old, new)
+    return body
+
+
 def empty_defaults(body: str) -> str:
     """Rewrite the placeholder default apps/bookmarks to empty lists.
 
@@ -160,7 +242,8 @@ def patch_template(html: str) -> str:
     shim = open(SHIM_PATH, encoding="utf-8").read()
     tag = (
         HEAD_MARKUP
-        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + EMPTY_STATE_CSS + "</style>"
+        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + EMPTY_STATE_CSS
+        + ICON_TILE_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
     )
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")
@@ -188,6 +271,7 @@ def patch_template(html: str) -> str:
     body = body.replace("<head>", "<head>" + escaped, 1)
 
     body = empty_defaults(body)
+    body = apply_js_patches(body)
 
     n = body.count(URL_HINT_OLD)
     if n != 1:

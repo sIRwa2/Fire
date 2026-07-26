@@ -128,10 +128,20 @@ assert ".bm-grid > div:only-child .new-cat span{background:none!important}" in t
     "the + glyph's background is not cleared"
 print("ok    add-button empty-state styling injected")
 
+# The picker tiles are targeted by data-icon, not by the runtime-generated .scpx
+# class, whose base36 suffix moves whenever render order changes.
+assert 'data-icon="{{ ic.name }}"' in tpl, "icon tiles lost the data-icon hook"
+assert "span[data-icon],span[data-icon]:hover{" in tpl, "icon tile CSS missing"
+print("ok    icon tile styling injected")
+
 for host in ("cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"):
     assert host not in html, "%s still referenced" % host
 print("ok    no remaining external hosts")
 PY
+
+echo
+echo "== icon -> title suggestion =="
+node "$ROOT/tests/suggest-title.test.mjs" "$WORK/stage/index.html"
 
 echo
 echo "== storage-shim.js =="
