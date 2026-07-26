@@ -64,12 +64,16 @@ rather than restoring demo data, and writes through to the server so it applies
 on every device.
 
 The "Add application" and "New category" buttons are hover-revealed, which would
-leave an empty dashboard looking blank, so they're forced visible while their
-grid is empty.
+leave an empty dashboard looking blank. On an empty grid they're forced visible,
+stripped of their dashed outline and of the tinted square behind the `+`, and
+dropped `EMPTY_ADD_BUTTON_OFFSET` (24px) below their heading. That styling is
+scoped to the empty state: once apps exist, `.add-app` is a grid item beside real
+cards, where the outline reads as an "add slot" and a top margin would break row
+alignment.
 
-One placeholder is left deliberately: the add/edit dialog's URL field keeps its
-`URL — e.g. https://plex.example.com` format hint, which is a form hint rather
-than dashboard content.
+The add/edit dialog's URL field keeps a bare `URL` placeholder. The dialog has no
+labels — every field relies on its placeholder — so dropping the attribute
+outright would leave an unlabelled box.
 
 ## What's here
 

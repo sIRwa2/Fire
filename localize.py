@@ -96,14 +96,40 @@ HEADER_CSS = ".page-wrap > header{margin-top:50px!important}"
 # persists them again and undoes the reset.
 EMPTIED_DEFAULTS = ("defaultApps", "defaultGroups")
 
-# Both "add" affordances are hover-revealed (opacity:0 until the grid is
-# hovered), which on an empty dashboard means a page with nothing visible on it.
+# The URL field's format hint. The dialog has no labels — every field relies on
+# its placeholder — so this keeps a bare "URL" rather than dropping the attribute
+# and leaving an unlabelled box. Matches the sibling "Title" placeholder.
+URL_HINT_OLD = 'placeholder=\\"URL — e.g. https://plex.example.com\\"'
+URL_HINT_NEW = 'placeholder=\\"URL\\"'
+
+# How far the two "add" buttons sit below their heading on an empty dashboard.
+EMPTY_ADD_BUTTON_OFFSET = "24px"
+
+# Presentation of the two "add" buttons on an empty dashboard.
+#
+# Everything here is scoped to :only-child — the empty case — deliberately. Once
+# apps exist, .add-app is a grid item sitting alongside real cards, where the
+# dashed outline reads as an "add slot" and a top margin would knock it out of
+# alignment with its row. Drop the :only-child qualifiers to make it
+# unconditional.
+#
 # sc-for and sc-if compile to React Fragments, which render no DOM node, so an
-# empty list leaves the button as the only child — that identifies the empty
-# case exactly. The bookmarks button sits one level deeper, inside a <div>.
+# empty list leaves the button as the only child — which is what makes
+# :only-child identify the empty case exactly. The bookmarks button sits one
+# level deeper, inside a <div>.
 EMPTY_STATE_CSS = (
-    ".app-grid .add-app:only-child{opacity:1!important}"
-    ".bm-grid > div:only-child .new-cat{opacity:1!important}"
+    # Both buttons are hover-revealed (opacity:0 until their grid is hovered),
+    # so without this an emptied dashboard renders as a blank page.
+    ".app-grid .add-app:only-child,"
+    ".bm-grid > div:only-child .new-cat{"
+    "opacity:1!important;"
+    # border-color, not border:none, so the box keeps its exact size.
+    "border-color:transparent!important;"
+    "margin-top:" + EMPTY_ADD_BUTTON_OFFSET + "!important}"
+    # The tinted square behind the + glyph. The label span alongside it has no
+    # background of its own, so this is safe to apply to both.
+    ".app-grid .add-app:only-child span,"
+    ".bm-grid > div:only-child .new-cat span{background:none!important}"
 )
 
 
@@ -162,6 +188,11 @@ def patch_template(html: str) -> str:
     body = body.replace("<head>", "<head>" + escaped, 1)
 
     body = empty_defaults(body)
+
+    n = body.count(URL_HINT_OLD)
+    if n != 1:
+        raise ValueError("expected 1 URL placeholder hint, found %d" % n)
+    body = body.replace(URL_HINT_OLD, URL_HINT_NEW)
 
     return html[: match.start()] + open_tag + body + close_tag + html[match.end():]
 

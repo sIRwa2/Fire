@@ -114,11 +114,19 @@ for name in ("defaultApps", "defaultGroups"):
 for gone in ("bitwarden.example.com", "news.ycombinator.com",
              "store.steampowered.com", "Todoist"):
     assert gone not in tpl, "placeholder data still present: %s" % gone
-# The one deliberate survivor is the URL field's format hint, not dashboard data.
-assert tpl.count("example.com") == 1, "unexpected example.com references"
-assert 'placeholder="URL' in tpl, "the URL field's example hint went missing"
-assert ".app-grid .add-app:only-child{opacity:1!important}" in tpl, "empty-state CSS missing"
-print("ok    placeholder apps and bookmarks emptied")
+assert tpl.count("example.com") == 0, "example.com is still referenced somewhere"
+# The dialog has no labels, so the URL field must keep some placeholder.
+assert 'placeholder="URL"' in tpl, "the URL field lost its placeholder entirely"
+print("ok    placeholder apps, bookmarks and URL hint emptied")
+
+# Empty-state presentation of the two add buttons: visible, no outline, no
+# tinted square behind the +, and dropped below the heading.
+for rule in ("opacity:1!important", "border-color:transparent!important",
+             "margin-top:24px!important"):
+    assert rule in tpl, "empty-state button CSS missing: %s" % rule
+assert ".bm-grid > div:only-child .new-cat span{background:none!important}" in tpl, \
+    "the + glyph's background is not cleared"
+print("ok    add-button empty-state styling injected")
 
 for host in ("cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"):
     assert host not in html, "%s still referenced" % host

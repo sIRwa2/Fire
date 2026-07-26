@@ -81,12 +81,23 @@ curl -X DELETE http://<host-lan-ip>:8080/api/config
 
 Both "add" buttons are hover-revealed (`opacity: 0` until their grid is
 hovered), which would leave a cleared dashboard looking like an empty page.
-`EMPTY_STATE_CSS` forces them visible while the grid holds nothing else —
-`sc-for` and `sc-if` compile to React Fragments, which render no DOM node, so
-`:only-child` identifies the empty case exactly.
+`EMPTY_STATE_CSS` handles their empty-state appearance: forced visible, dashed
+outline cleared, the tinted square behind the `+` removed, and dropped
+`EMPTY_ADD_BUTTON_OFFSET` (24px) below the heading. The outline goes via
+`border-color: transparent` rather than `border: none` so the box keeps its exact
+size.
 
-The add/edit dialog's URL field keeps its `URL — e.g. https://plex.example.com`
-hint, the one placeholder left in place; it is a form hint, not dashboard data.
+All of it is scoped to `:only-child`, i.e. the empty dashboard. Once apps exist,
+`.add-app` is a grid item sitting alongside real cards, where the dashed outline
+reads as an "add slot" and a top margin would knock it out of alignment with its
+row. Drop the `:only-child` qualifiers to make it unconditional. `sc-for` and
+`sc-if` compile to React Fragments, which render no DOM node, so an empty list
+leaves the button as the only child — that is what makes `:only-child` identify
+the empty case exactly.
+
+The add/edit dialog's URL field is reduced to a bare `URL` placeholder. The
+dialog has no labels — every field relies on its placeholder — so removing the
+attribute outright would leave an unlabelled box.
 
 To also discard the history snapshots and start from bare metal:
 
