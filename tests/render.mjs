@@ -116,6 +116,7 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
         addOutline: cs('.add-app', 'outlineStyle'),
         plusBg: plus && getComputedStyle(plus).backgroundColor,
         addOpacity: cs('.add-app', 'opacity'),
+        cardMargin: cs('.app-grid > a[data-drag-id]', 'marginBottom'),
         sheets: [...document.querySelectorAll('style')].length,
         attached: [...document.querySelectorAll('style')].filter((x) => x.sheet).length,
       };
@@ -198,6 +199,10 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     check(`${label}: no external requests`, external.length === 0, external[0]);
     check(`${label}: no failed requests`, broken.length === 0, broken[0]);
     if (populated) {
+      // The cards are flush — their inline padding is overridden to 0 on all
+      // sides — so this margin is the only thing separating rows beyond the gap.
+      check(`${label}: cards have a bottom margin`, s.cardMargin === '14px', s.cardMargin);
+
       // Items drag between the two lists, so the dialogs must offer the same
       // fields — the bookmark one used to hide Description, and bookmarks could
       // not be edited at all.

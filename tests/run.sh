@@ -184,6 +184,10 @@ assert tpl.rindex('{{ editable }}', 0, grip_at) > tpl.rindex('</sc-if>', 0, grip
     "the drag grip is outside the editable block"
 print("ok    categories drag-sortable, drag typed by kind")
 
+assert ".app-grid > a[data-drag-id],.app-grid > .add-app{margin-bottom:14px!important}" in tpl, \
+    "card bottom margin missing"
+print("ok    app cards have a bottom margin")
+
 print("ok    header lock/settings buttons flattened, locked state preserved")
 
 # The picker takes its list from the service so an update shows up without a

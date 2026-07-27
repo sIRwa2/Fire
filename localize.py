@@ -154,6 +154,23 @@ ADD_LABEL_CSS = (
     ".bm-cat > button > span:first-child{color:var(--accent)!important}"
 )
 
+# Bottom margin under the app cards.
+#
+# They sit closer together than they look: the inline style declares
+# padding:12px 14px and then overrides all four sides with padding-*:0px, so a
+# card is flush and the only vertical separation is the grid's 14px row gap
+# against a 24px column gap. 14px of margin brings the vertical rhythm (14 + 14)
+# in line with the horizontal one.
+#
+# Applied to the add button as well as the cards. Grid items stretch to the row
+# height by default, so giving only the cards a margin would leave the button's
+# hover area taller than theirs in a shared row.
+CARD_BOTTOM_MARGIN = "14px"
+CARD_MARGIN_CSS = (
+    ".app-grid > a[data-drag-id],.app-grid > .add-app"
+    "{margin-bottom:" + CARD_BOTTOM_MARGIN + "!important}"
+)
+
 # The header's lock and settings buttons. .hdr-actions holds exactly those two —
 # the sc-if pair inside the lock button only swaps the padlock glyph — so this
 # matches them and nothing else. Targeted that way rather than by the .scp0 /
@@ -743,6 +760,7 @@ def patch_template(html: str) -> str:
     tag = (
         HEAD_MARKUP
         + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + ADD_BUTTON_CSS + ADD_LABEL_CSS
+        + CARD_MARGIN_CSS
         + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
         + ICON_TILE_CSS + CATEGORY_GRIP_CSS + TOUCH_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
