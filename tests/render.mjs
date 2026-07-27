@@ -214,6 +214,23 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
       check(`${label}: both dialogs focus the URL field`,
         appDlg.focused === 'url' && bmDlg.focused === 'url',
         `${appDlg.focused} / ${bmDlg.focused}`);
+      // The words are grey; the + glyphs keep the accent.
+      const labelColours = await page.evaluate(() => {
+        const c = (sel) => { const el = document.querySelector(sel); return el ? getComputedStyle(el).color : null; };
+        return {
+          app: c('.add-app span:last-child'), appPlus: c('.add-app span:first-child'),
+          cat: c('.new-cat span:last-child'),
+          bm: c('.bm-cat > button span:last-child'), bmPlus: c('.bm-cat > button span:first-child'),
+        };
+      });
+      const GREY = 'rgb(154, 163, 173)', ACCENT = 'rgb(148, 204, 138)';
+      check(`${label}: add labels are grey`,
+        [labelColours.app, labelColours.cat, labelColours.bm].every((v) => v === GREY),
+        JSON.stringify(labelColours));
+      check(`${label}: + glyphs keep the accent`,
+        labelColours.appPlus === ACCENT && labelColours.bmPlus === ACCENT,
+        `${labelColours.appPlus} / ${labelColours.bmPlus}`);
+
       const canEdit = await page.evaluate(
         () => !!document.querySelector('.bm-cat span[title="Edit"]'));
       check(`${label}: bookmarks have an edit button`, canEdit);

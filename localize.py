@@ -137,6 +137,23 @@ ADD_BUTTON_CSS = (
     ".add-app span,.new-cat span{background:none!important}"
 )
 
+# Grey labels on the three "add" affordances. #9aa3ad is the page's existing
+# muted-text colour rather than a new one.
+#
+# Only the words: each button is a + glyph span followed by a label span, and the
+# glyph keeps the accent. add-app and new-cat carry the colour inline on the label
+# span, so :last-child targets it. The bookmark button instead sets the colour on
+# the button and lets both spans inherit, so that one is greyed at the button and
+# the glyph is put back — otherwise the + would grey too. .bm-cat > button is
+# unambiguous: the delete and edit affordances beside it are spans.
+ADD_LABEL_COLOUR = "#9aa3ad"
+ADD_LABEL_CSS = (
+    ".add-app span:last-child,"
+    ".new-cat span:last-child,"
+    ".bm-cat > button{color:" + ADD_LABEL_COLOUR + "!important}"
+    ".bm-cat > button > span:first-child{color:var(--accent)!important}"
+)
+
 # The header's lock and settings buttons. .hdr-actions holds exactly those two —
 # the sc-if pair inside the lock button only swaps the padlock glyph — so this
 # matches them and nothing else. Targeted that way rather than by the .scp0 /
@@ -611,7 +628,7 @@ def patch_template(html: str) -> str:
     shim = open(SHIM_PATH, encoding="utf-8").read()
     tag = (
         HEAD_MARKUP
-        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + ADD_BUTTON_CSS
+        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + ADD_BUTTON_CSS + ADD_LABEL_CSS
         + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
         + ICON_TILE_CSS + TOUCH_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"

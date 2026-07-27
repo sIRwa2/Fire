@@ -162,6 +162,13 @@ assert "lockTitle: s.locked ? 'Layout locked" in tpl, \
     "lock title reworded; the locked-state selector would no longer match"
 assert "lockBg: s.locked ? 'var(--accent)'" in tpl, \
     "lockBg no longer marks the locked state, which the border used to"
+# Grey labels on the three add affordances, with the + glyphs left on the accent.
+assert ".add-app span:last-child," in tpl and "#9aa3ad!important}" in tpl, \
+    "add-label colour CSS missing"
+assert ".bm-cat > button > span:first-child{color:var(--accent)!important}" in tpl, \
+    "the bookmark + glyph would grey along with its button"
+print("ok    add-button labels greyed, + glyphs left on the accent")
+
 print("ok    header lock/settings buttons flattened, locked state preserved")
 
 # The picker takes its list from the service so an update shows up without a
