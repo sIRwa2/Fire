@@ -377,6 +377,24 @@ the clipboard is only read when it has already been granted; the prompt is never
 triggered. Anything that is not an `http(s)://` URL under 2048 characters is
 ignored, and an existing URL is never overwritten.
 
+## Bookmarks and apps are the same kind of thing
+
+Items drag between the two lists, and the drop handler already treated them as
+one shape: moving a bookmark into apps synthesises a `desc` from the URL host,
+while moving an app into a group keeps its `desc` untouched. So a bookmark could
+already carry a description — the dialog just hid the field, and there was no way
+to edit a bookmark at all. Both were asymmetries in the UI, not in the data.
+
+The bookmark dialog now offers the same fields as the application one, bookmarks
+have the edit affordance apps have, and the clipboard/focus behaviour applies to
+both. The heading still says which you are creating.
+
+`saveModal` stores a bookmark's trimmed description as-is rather than copying the
+app branch's `|| url` fallback. A bookmark card does not display a description, so
+defaulting it to the URL would only surface later as a worse label after a drag
+into apps — the drop handler's host fallback is the better one, and leaving it
+empty keeps that reachable.
+
 ## Icon updates
 
 The dashboard can pull new and changed icons from

@@ -486,7 +486,7 @@ CLIPBOARD_PATCHES = tuple(
       if (perm.state !== 'granted') return;
       const text = ((await navigator.clipboard.readText()) || '').trim();
       if (text.length > 2048 || !/^https?:\\/\\/[^\\s]+$/i.test(text)) return;
-      this.setState(s => (s.modal && s.modal.kind === 'app' && !s.modal.url)
+      this.setState(s => (s.modal && !s.modal.url)
         ? { modal: { ...s.modal, url: text } } : null);
     } catch (e) {
       // No clipboard, no permissions API, or refused. The field is focused, so
@@ -498,9 +498,85 @@ CLIPBOARD_PATCHES = tuple(
 )
 
 
+# ── Bookmarks and apps as the same kind of thing ────────────────────────────
+# Items drag between the two lists, and the drop handler already treats them as
+# one shape: moving a bookmark into apps synthesises a desc from the URL host,
+# and moving an app into a group keeps its desc untouched. So a bookmark can
+# already carry a description — the dialog just hid the field, and there was no
+# way to edit a bookmark at all. Both were asymmetries in the UI rather than in
+# the data.
+#
+# Four changes: show Description for bookmarks, persist it, give bookmarks the
+# edit affordance apps have, and offer the clipboard URL from the bookmark dialog
+# too.
+#
+# saveModal stores the trimmed description as-is for a bookmark rather than
+# copying the app branch's `|| url` fallback. A bookmark card does not display a
+# description, so defaulting it to the URL would only surface later as a worse
+# label after a drag into apps — the drop handler's host fallback is the better
+# one, and leaving the field empty keeps it reachable.
+PARITY_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "show the description field for bookmarks",
+            "      modalShowDesc: !!m && m.kind === 'app',",
+            "      modalShowDesc: !!m,",
+        ),
+        (
+            "persist a bookmark's description",
+            "      const base = { icon: m.icon || 'homepage', title: m.title.trim(), url };",
+            "      const base = { icon: m.icon || 'homepage', title: m.title.trim(),"
+            " desc: m.desc.trim(), url };",
+        ),
+        (
+            "editing a bookmark",
+            "  deleteBookmark = (e) => {",
+            """  editBookmark = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const { gid, id } = e.currentTarget.dataset;
+    const group = this.state.groups.find(g => g.id === gid);
+    const bm = group && group.bookmarks.find(b => b.id === id);
+    if (bm) this.setState({ modal: { kind: 'bm', editId: bm.id, groupId: gid, icon: bm.icon, title: bm.title, desc: bm.desc || '', url: bm.url, q: '' } });
+  };
+  deleteBookmark = (e) => {""",
+        ),
+        (
+            "expose the bookmark edit handler",
+            "      deleteBookmark: this.deleteBookmark,",
+            "      deleteBookmark: this.deleteBookmark,\n"
+            "      editBookmark: this.editBookmark,",
+        ),
+        (
+            "an edit button on each bookmark",
+            '<span data-nodrag="1" data-gid="{{ group.id }}" data-id="{{ bm.id }}"'
+            ' sc-camel-on-click="{{ deleteBookmark }}" title="Remove"',
+            '<span data-nodrag="1" data-gid="{{ group.id }}" data-id="{{ bm.id }}"'
+            ' sc-camel-on-click="{{ editBookmark }}" title="Edit"'
+            ' style="width:20px;height:20px;display:grid;place-items:center;'
+            "border-radius:5px;font-size:10px;color:#9aa3ad;cursor:pointer;"
+            'opacity:0;margin-left:4px"'
+            ' style-hover="opacity:1;background:rgba(255,255,255,.1);color:#eceef1"'
+            ">✎</span>"
+            '<span data-nodrag="1" data-gid="{{ group.id }}" data-id="{{ bm.id }}"'
+            ' sc-camel-on-click="{{ deleteBookmark }}" title="Remove"',
+        ),
+        (
+            "offer the clipboard URL when adding a bookmark",
+            "    this.setState({ modal: { kind: 'bm', editId: null, groupId, icon: '',"
+            " title: '', desc: '', url: '', q: '' } });",
+            "    this.setState({ modal: { kind: 'bm', editId: null, groupId, icon: '',"
+            " title: '', desc: '', url: '', q: '' } });\n"
+            "    this.maybePasteUrl();",
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
-    for name, old, new in JS_PATCHES + ICON_UPDATE_PATCHES + CLIPBOARD_PATCHES:
+    for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
+                           + CLIPBOARD_PATCHES + PARITY_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))

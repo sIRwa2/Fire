@@ -191,6 +191,33 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     check(`${label}: no external requests`, external.length === 0, external[0]);
     check(`${label}: no failed requests`, broken.length === 0, broken[0]);
     if (populated) {
+      // Items drag between the two lists, so the dialogs must offer the same
+      // fields — the bookmark one used to hide Description, and bookmarks could
+      // not be edited at all.
+      const dialogFields = async (open) => {
+        await open();
+        await page.waitForTimeout(400);
+        const r = await page.evaluate(() => ({
+          fields: [...document.querySelectorAll('[data-screen-label="Add entry modal"] input')]
+            .map((i) => i.dataset.field).filter(Boolean).join(','),
+          focused: document.activeElement?.dataset?.field,
+        }));
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(250);
+        return r;
+      };
+      const appDlg = await dialogFields(() => page.click('.add-app'));
+      const bmDlg = await dialogFields(() => page.click('.bm-cat button'));
+      check(`${label}: both dialogs offer the same fields`,
+        appDlg.fields === bmDlg.fields && appDlg.fields.includes('desc'),
+        `${appDlg.fields} vs ${bmDlg.fields}`);
+      check(`${label}: both dialogs focus the URL field`,
+        appDlg.focused === 'url' && bmDlg.focused === 'url',
+        `${appDlg.focused} / ${bmDlg.focused}`);
+      const canEdit = await page.evaluate(
+        () => !!document.querySelector('.bm-cat span[title="Edit"]'));
+      check(`${label}: bookmarks have an edit button`, canEdit);
+
       check(`${label}: seed applied`, s.apps === 2, s.apps);
       check(`${label}: add button hidden until hover`, s.addOpacity === '0', s.addOpacity);
       await page.hover('.app-grid');
