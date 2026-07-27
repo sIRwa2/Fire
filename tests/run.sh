@@ -169,6 +169,21 @@ assert ".bm-cat > button > span:first-child{color:var(--accent)!important}" in t
     "the bookmark + glyph would grey along with its button"
 print("ok    add-button labels greyed, + glyphs left on the accent")
 
+# Drag-sortable categories. The typing is what keeps a bookmark from being
+# captured by .bm-grid, which encloses every category list.
+for needed in ('data-container="groups"', 'data-accepts="group"',
+               'data-drag-kind="group"', 'class="cat-grip"',
+               "(c.dataset.accepts || 'item') === kind",
+               "(n.dataset.dragKind || 'item') === kind",
+               "this._press.kind === 'group'",
+               "e.currentTarget.closest('[data-drag-id]')"):
+    assert needed in tpl, "category drag piece missing: %s" % needed
+# The grip has to be inside the editable block, since dragging is lock-gated.
+grip_at = tpl.index('class="cat-grip"')
+assert tpl.rindex('{{ editable }}', 0, grip_at) > tpl.rindex('</sc-if>', 0, grip_at), \
+    "the drag grip is outside the editable block"
+print("ok    categories drag-sortable, drag typed by kind")
+
 print("ok    header lock/settings buttons flattened, locked state preserved")
 
 # The picker takes its list from the service so an update shows up without a

@@ -395,6 +395,38 @@ defaulting it to the URL would only surface later as a worse label after a drag
 into apps — the drop handler's host fallback is the better one, and leaving it
 empty keeps that reachable.
 
+## Drag-sortable categories
+
+Bookmark categories reorder by dragging the grip beside their name. The grip is
+hover-revealed and only exists while the layout is unlocked, matching the delete
+affordance and the lock that already gated dragging.
+
+Making this work meant typing the drag, because a category is a draggable that
+both *contains* draggables and *is* a container. Two collisions came out of that:
+
+- `hitTest` takes the first `[data-container]` whose rect holds the pointer, in
+  document order. `.bm-grid` encloses every category list, so dragging a bookmark
+  would have resolved to `.bm-grid` and dropped into the wrong place.
+- `.bm-grid`'s `[data-drag-id]` descendants are the categories *and* every
+  bookmark nested inside them, so the insertion index would have been computed
+  against a mixed list.
+
+So items carry `data-drag-kind` and containers declare `data-accepts`, defaulting
+to `item` — the app grid and the category lists need no markup change — and
+`hitTest` filters both by the kind being dragged. A category can only land among
+categories, a bookmark only among bookmarks.
+
+The handle is separate from the moved element, which the system did not support:
+`dragPointerDown` used `e.currentTarget` as both. Resolving the moved node with
+`closest('[data-drag-id]')` leaves apps and bookmarks identical — `currentTarget`
+is already the draggable, so `closest` returns itself — while letting the grip
+move the whole category. That separation is necessary rather than cosmetic: the
+category name is `contentEditable`, so without a dedicated handle, click-dragging
+to select the text would drag the column instead.
+
+Ordering persists through the existing `saveLS()` on drop, since group order is
+just the array order.
+
 ## Icon updates
 
 The dashboard can pull new and changed icons from

@@ -21,7 +21,10 @@ const SEED = JSON.stringify({
     { id: 'plex', icon: 'plex', title: 'Plex', desc: 'plex.lan', url: 'http://plex.lan' },
     { id: 'proxmox', icon: 'proxmox', title: 'Proxmox', desc: 'pve.lan', url: 'http://pve.lan' },
   ],
-  groups: [{ id: 'g1', name: 'Dev', bookmarks: [{ id: 'gitea', icon: 'gitea', title: 'Gitea', url: 'http://gitea.lan' }] }],
+  groups: [
+    { id: 'g1', name: 'Dev', bookmarks: [{ id: 'gitea', icon: 'gitea', title: 'Gitea', url: 'http://gitea.lan' }] },
+    { id: 'g2', name: 'Ops', bookmarks: [{ id: 'grafana', icon: 'grafana', title: 'Grafana', url: 'http://grafana.lan' }] },
+  ],
   appsTitle: 'Applications',
   bookmarksTitle: 'Bookmarks',
 });
@@ -188,6 +191,10 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
       !!lockBtn && transparent(lockBtn.border), lockBtn && lockBtn.border);
     check(`${label}: locked state still marked by the accent plate`,
       !!lockBtn && lockBtn.bg === 'rgb(148, 204, 138)', lockBtn && lockBtn.bg);
+    // Unlock again: everything below is gated on editable, including the
+    // category drag grip, which is absent while the layout is locked.
+    await page.click('.hdr-actions button[title^="Layout locked"]');
+    await page.waitForTimeout(400);
     check(`${label}: no external requests`, external.length === 0, external[0]);
     check(`${label}: no failed requests`, broken.length === 0, broken[0]);
     if (populated) {
@@ -230,6 +237,35 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
       check(`${label}: + glyphs keep the accent`,
         labelColours.appPlus === ACCENT && labelColours.bmPlus === ACCENT,
         `${labelColours.appPlus} / ${labelColours.bmPlus}`);
+
+      // Categories are drag-sortable. The risk in making .bm-grid a container is
+      // that it encloses every category list, so this also confirms a bookmark
+      // still lands in its own list rather than being captured by the outer one.
+      const catOrder = () => page.evaluate(() => [...document.querySelectorAll('.bm-cat')]
+        .map((c) => c.querySelector('span')?.textContent?.trim()));
+      const before = await catOrder();
+      const grip = page.locator('.bm-cat').first().locator('.cat-grip');
+      const gripBox = await grip.boundingBox();
+      const lastBox = await page.locator('.bm-cat').last().boundingBox();
+      if (gripBox && lastBox) {
+        await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+        await page.mouse.down();
+        for (let i = 1; i <= 12; i++) {
+          await page.mouse.move(
+            gripBox.x + (lastBox.x + lastBox.width * 0.6 - gripBox.x) * i / 12,
+            gripBox.y + (lastBox.y - gripBox.y) * i / 12, { steps: 1 });
+        }
+        await page.waitForTimeout(200);
+        await page.mouse.up();
+        await page.waitForTimeout(500);
+      }
+      const after = await catOrder();
+      check(`${label}: categories are drag-sortable`,
+        before.length === 2 && after.join() === before.slice().reverse().join(),
+        `${before} -> ${after}`);
+      const bmIntact = await page.evaluate(() => [...document.querySelectorAll('.bm-cat')]
+        .every((c) => c.querySelectorAll('a[data-drag-id]').length === 1));
+      check(`${label}: dragging a category keeps its bookmarks`, bmIntact);
 
       const canEdit = await page.evaluate(
         () => !!document.querySelector('.bm-cat span[title="Edit"]'));

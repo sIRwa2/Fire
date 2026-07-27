@@ -322,7 +322,7 @@ ICON_TILE_CSS = (
 # edit/delete buttons are always visible, which is the only way to reach them.
 TOUCH_CSS = (
     "@media (hover:none){"
-    ".app-grid .add-app,.hdr-row .hdr-actions,.bm-grid .new-cat,.bm-cat .cat-del,"
+    ".app-grid .add-app,.hdr-row .hdr-actions,.bm-grid .new-cat,"".bm-cat .cat-del,.bm-cat .cat-grip,"
     '[data-nodrag="1"]{opacity:1!important}'
     "}"
 )
@@ -590,10 +590,124 @@ PARITY_PATCHES = tuple(
 )
 
 
+# ── Drag-sortable bookmark categories ───────────────────────────────────────
+# The existing drag system moves items between containers: hitTest finds the
+# [data-container] under the pointer and the insertion index among its
+# [data-drag-id] children, and moveLive splices the item across state. Categories
+# were not part of it — only the bookmarks inside them.
+#
+# Making .bm-grid a container and each .bm-cat draggable creates two collisions,
+# because a category is a draggable that *contains* draggables and a container:
+#
+#   * hitTest takes the first [data-container] whose rect holds the pointer, in
+#     document order. .bm-grid encloses every category list, so dragging a
+#     bookmark would resolve to .bm-grid and drop into the wrong place.
+#   * .bm-grid's [data-drag-id] children are both the categories and every
+#     bookmark nested inside them, so the insertion index would be computed
+#     against a mixed list.
+#
+# Both are fixed by making the drag typed: items carry data-drag-kind, containers
+# declare data-accepts (defaulting to "item", so the app grid and the category
+# lists need no markup change), and hitTest filters both by the kind being
+# dragged. A category can then only land among categories and a bookmark only
+# among bookmarks.
+#
+# The handle is separate from the moved element, which the system did not support:
+# dragPointerDown used e.currentTarget as both. Resolving the moved node with
+# closest('[data-drag-id]') keeps apps and bookmarks identical — currentTarget is
+# already the draggable, so closest returns itself — while letting a grip inside
+# the header move the whole category. That matters because the category name is
+# contentEditable: without a dedicated handle, click-dragging to select the text
+# would drag the column instead.
+#
+# The grip lives inside the same sc-if editable as the delete affordance, so it
+# is absent exactly when dragging is disabled by the lock.
+CATEGORY_DRAG_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "resolve the dragged node from its handle",
+            "    const el = e.currentTarget;\n    const r = el.getBoundingClientRect();",
+            "    const el = e.currentTarget.closest('[data-drag-id]') || e.currentTarget;\n"
+            "    const r = el.getBoundingClientRect();",
+        ),
+        (
+            "record what kind of thing is being dragged",
+            "      id: el.dataset.dragId, el,",
+            "      id: el.dataset.dragId, kind: el.dataset.dragKind || 'item', el,",
+        ),
+        (
+            "only consider containers that accept this kind",
+            "    const conts = [...document.querySelectorAll('[data-container]')];",
+            "    const kind = this._press.kind || 'item';\n"
+            "    const conts = [...document.querySelectorAll('[data-container]')]\n"
+            "      .filter(c => (c.dataset.accepts || 'item') === kind);",
+        ),
+        (
+            "index against same-kind siblings only",
+            "    const items = [...cont.querySelectorAll('[data-drag-id]')]"
+            ".filter(n => n.dataset.dragId !== this._press.id);",
+            "    const items = [...cont.querySelectorAll('[data-drag-id]')]\n"
+            "      .filter(n => (n.dataset.dragKind || 'item') === kind"
+            " && n.dataset.dragId !== this._press.id);",
+        ),
+        (
+            "reorder categories",
+            "  moveLive(id, toCid, toIndex) {\n    let item = null;",
+            """  moveLive(id, toCid, toIndex) {
+    if (this._press && this._press.kind === 'group') {
+      const moving = this.state.groups.find(g => g.id === id);
+      if (!moving) return;
+      const groups = this.state.groups.filter(g => g.id !== id);
+      groups.splice(toIndex, 0, moving);
+      const reordered = { apps: this.state.apps, groups };
+      if (this.sig(reordered) === this.sig(this.state)) return;
+      this.flipMove(reordered);
+      return;
+    }
+    let item = null;""",
+        ),
+        (
+            "the category grid becomes a container",
+            '<div class="bm-grid" style="display:grid;',
+            '<div class="bm-grid" data-container="groups" data-layout="grid"'
+            ' data-accepts="group" style="display:grid;',
+        ),
+        (
+            "each category becomes draggable",
+            '<div class="bm-cat" style="display:flex;',
+            '<div class="bm-cat" data-drag-id="{{ group.id }}" data-drag-kind="group"'
+            ' style="display:flex;',
+        ),
+        (
+            "a grip to drag the category by",
+            '<sc-if value="{{ editable }}" hint-placeholder-val="{{ true }}">\n'
+            '                <span class="cat-del"',
+            '<sc-if value="{{ editable }}" hint-placeholder-val="{{ true }}">\n'
+            '                <span class="cat-grip" sc-camel-on-pointer-down='
+            '"{{ dragPointerDown }}" title="Drag to reorder" style="display:flex;'
+            "align-items:center;padding:2px 4px;border-radius:5px;font-size:11px;"
+            'line-height:1;color:#6d757e">⠿</span>\n'
+            '                <span class="cat-del"',
+        ),
+    )
+)
+
+# The grip follows the delete affordance's hover-reveal. touch-action:none stops a
+# touch drag being taken over by the page scroll.
+CATEGORY_GRIP_CSS = (
+    ".bm-cat .cat-grip{opacity:0;transition:opacity .18s ease;"
+    "cursor:grab;touch-action:none}"
+    ".bm-cat:hover .cat-grip{opacity:1}"
+    ".bm-cat .cat-grip:active{cursor:grabbing}"
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
-                           + CLIPBOARD_PATCHES + PARITY_PATCHES):
+                           + CLIPBOARD_PATCHES + PARITY_PATCHES
+                           + CATEGORY_DRAG_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))
@@ -630,7 +744,7 @@ def patch_template(html: str) -> str:
         HEAD_MARKUP
         + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + ADD_BUTTON_CSS + ADD_LABEL_CSS
         + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
-        + ICON_TILE_CSS + TOUCH_CSS + "</style>"
+        + ICON_TILE_CSS + CATEGORY_GRIP_CSS + TOUCH_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
     )
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")
