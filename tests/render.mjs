@@ -150,6 +150,16 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     check(`${label}: no focus ring after a mouse click`, ringOnClick === 'none', ringOnClick);
     check(`${label}: no focus ring after a key press`, ringAfterKey === 'none', ringAfterKey);
 
+    // Opening the add dialog must focus the URL field. This is the half of the
+    // clipboard feature that works without a secure context, and it is what makes
+    // pasting a single keystroke on a plain-http LAN deployment.
+    await page.click('.add-app');
+    await page.waitForTimeout(500);
+    const focused = await page.evaluate(() => document.activeElement?.dataset?.field);
+    check(`${label}: add dialog focuses the URL field`, focused === 'url', focused);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+
     // The header's lock and settings buttons, flat in both lock states. The lock
     // border used to be a locked-state signal, so assert the accent plate that
     // now carries that job on its own is still there.

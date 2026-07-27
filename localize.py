@@ -443,9 +443,64 @@ ICON_UPDATE_PATCHES = tuple(
 )
 
 
+# ── Pasting a URL into the add dialog ───────────────────────────────────────
+# Focusing the URL field is the part that actually helps: nothing in the modal
+# was focused before, so adding an app meant clicking into a field first. With it
+# focused, pasting is a single Cmd/Ctrl+V, needs no permission, and works over
+# plain HTTP.
+#
+# Reading the clipboard automatically is attempted too, but it will not fire on a
+# LAN deployment. navigator.clipboard is gated on a secure context, and measured
+# in both engines: at http://127.0.0.1 it exists (readText still throws
+# NotAllowedError without permission), while at http://<lan-ip> isSecureContext is
+# false and navigator.clipboard is undefined outright. So this is dead code over
+# http:// and starts working by itself behind HTTPS.
+#
+# Even where it exists, calling readText() raises a permission prompt in Chrome
+# and a paste confirmation in Safari — on every click of Add application, which
+# would be worse than pressing Cmd+V. So the permission is queried first and the
+# clipboard is only read when it has *already* been granted; the prompt is never
+# triggered. permissions.query itself throws for an unknown name in Safari, which
+# the catch treats as "don't read".
+CLIPBOARD_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "focus the URL field when the dialog opens",
+            '<input value="{{ fUrl }}" data-field="url"',
+            '<input ref="{{ focusRef }}" value="{{ fUrl }}" data-field="url"',
+        ),
+        (
+            "offer the clipboard URL when adding an app",
+            "  openAddApp = () => this.setState({ modal: { kind: 'app', editId: null,"
+            " groupId: null, icon: '', title: '', desc: '', url: '', q: '' } });",
+            """  openAddApp = () => {
+    this.setState({ modal: { kind: 'app', editId: null, groupId: null, icon: '', title: '', desc: '', url: '', q: '' } });
+    this.maybePasteUrl();
+  };
+  maybePasteUrl = async () => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.readText) return;
+      // Only read when already granted, so this never raises a prompt.
+      const perm = await navigator.permissions.query({ name: 'clipboard-read' });
+      if (perm.state !== 'granted') return;
+      const text = ((await navigator.clipboard.readText()) || '').trim();
+      if (text.length > 2048 || !/^https?:\\/\\/[^\\s]+$/i.test(text)) return;
+      this.setState(s => (s.modal && s.modal.kind === 'app' && !s.modal.url)
+        ? { modal: { ...s.modal, url: text } } : null);
+    } catch (e) {
+      // No clipboard, no permissions API, or refused. The field is focused, so
+      // pasting by hand is one keystroke.
+    }
+  };""",
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
-    for name, old, new in JS_PATCHES + ICON_UPDATE_PATCHES:
+    for name, old, new in JS_PATCHES + ICON_UPDATE_PATCHES + CLIPBOARD_PATCHES:
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))

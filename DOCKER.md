@@ -352,6 +352,31 @@ Because `ic.bg`/`ic.border` were what marked the selected icon in the accent
 colour, the grid no longer shows which icon is chosen. The 44px preview beside
 the search box still does.
 
+## Pasting a URL into the add dialog
+
+Opening **Add application** focuses the URL field, so pasting is a single
+Cmd/Ctrl+V. Nothing was focused before, which meant clicking into a field first.
+This needs no permission and works over plain HTTP.
+
+Reading the clipboard automatically is attempted as well, but **it will not fire
+on a LAN deployment**. `navigator.clipboard` is gated on a secure context, and
+measured in both engines:
+
+| origin | `isSecureContext` | `navigator.clipboard` |
+| --- | --- | --- |
+| `http://127.0.0.1:8080` | true | present; `readText()` throws `NotAllowedError` |
+| `http://192.168.0.108:8080` | **false** | **undefined** |
+
+So over `http://` it is inert, and it starts working by itself if the dashboard
+ever sits behind HTTPS.
+
+Even where the API exists, calling `readText()` raises a permission prompt in
+Chrome and a paste confirmation in Safari — on *every* click of Add application,
+which would be worse than pressing Cmd+V. So the permission is queried first and
+the clipboard is only read when it has already been granted; the prompt is never
+triggered. Anything that is not an `http(s)://` URL under 2048 characters is
+ignored, and an existing URL is never overwritten.
+
 ## Icon updates
 
 The dashboard can pull new and changed icons from
