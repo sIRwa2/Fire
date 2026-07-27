@@ -427,6 +427,29 @@ to select the text would drag the column instead.
 Ordering persists through the existing `saveLS()` on drop, since group order is
 just the array order.
 
+## Opening links in a new tab or the same one
+
+**Settings → Open links in a new tab.** On by default, and the choice lives in the
+theme object, so the config service persists it and it follows you to any browser.
+
+The page already decided this, but from an authoring prop:
+
+```js
+linkTarget: (this.props.openInNewTab ?? true) ? '_blank' : '_self'
+```
+
+`props` come from the `x-dc` script's `data-props`, so it was baked into the export
+and not reachable by the dashboard's user. It now reads a `sameTab` flag on the
+theme, defaulting from that prop so an existing dashboard behaves exactly as
+before until the toggle is touched.
+
+The default uses `??` rather than `||` deliberately: once you have chosen "same
+tab off", `false` is a real stored value and `||` would have discarded it and
+fallen back to the prop. Verified by toggling both ways — the server holds
+`{"sameTab": true}` then `{"sameTab": false}`, and both survive a reload.
+
+Apps and bookmarks share the same `linkTarget`, so they cannot disagree.
+
 ## Icon updates
 
 The dashboard can pull new and changed icons from

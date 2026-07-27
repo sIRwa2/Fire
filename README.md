@@ -96,6 +96,19 @@ of the set baked into the image — so `docker compose down -v` reverts to the
 shipped icons. This is the only thing in the stack that reaches the internet, and
 only on that click. See [DOCKER.md](DOCKER.md#icon-updates).
 
+## Settings
+
+The settings panel (the gear in the header) holds the theme, font and colour
+options that shipped with the page, plus:
+
+| | |
+| --- | --- |
+| **Open links in a new tab** | On by default. Applies to both apps and bookmarks. |
+| **Icons — Check for updates** | Pulls new icons from upstream. See [DOCKER.md](DOCKER.md#icon-updates). |
+
+Both are stored server-side with the rest of your config, so they follow you to
+any browser.
+
 ## Risks and trade-offs
 
 Everything here assumes a trusted LAN and a dashboard whose contents are not

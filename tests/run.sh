@@ -188,6 +188,20 @@ assert ".app-grid > a[data-drag-id],.app-grid > .add-app{margin-bottom:14px!impo
     "card bottom margin missing"
 print("ok    app cards have a bottom margin")
 
+# The link target moves from an authoring prop to a persisted user setting. The
+# ?? matters: once chosen, sameTab:false must not fall back to the prop default.
+assert "sameTab: t.sameTab ?? !(this.props.openInNewTab ?? true)" in tpl, \
+    "link-target default no longer layers over the prop"
+assert "linkTarget: th.sameTab ? '_self' : '_blank'," in tpl, \
+    "linkTarget does not read the setting"
+assert "toggleSameTab = () => this.setTheme({ sameTab: !this.theme().sameTab });" in tpl
+assert "Open links in a new tab" in tpl and "{{ newTabTrack }}" in tpl, \
+    "the settings row is missing"
+# It has to live in the theme, which is what the config service persists.
+assert "sameTab" in re.search(r"  theme\(\) \{.*?\n  \}", tpl, re.S).group(0), \
+    "sameTab is not part of theme(), so it would not persist"
+print("ok    link target is a persisted setting")
+
 print("ok    header lock/settings buttons flattened, locked state preserved")
 
 # The picker takes its list from the service so an update shows up without a

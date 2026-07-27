@@ -117,6 +117,8 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
         plusBg: plus && getComputedStyle(plus).backgroundColor,
         addOpacity: cs('.add-app', 'opacity'),
         cardMargin: cs('.app-grid > a[data-drag-id]', 'marginBottom'),
+        appTarget: document.querySelector('.app-grid a[data-drag-id]')?.target,
+        bmTarget: document.querySelector('.bm-cat a[data-drag-id]')?.target,
         sheets: [...document.querySelectorAll('style')].length,
         attached: [...document.querySelectorAll('style')].filter((x) => x.sheet).length,
       };
@@ -202,6 +204,10 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
       // The cards are flush — their inline padding is overridden to 0 on all
       // sides — so this margin is the only thing separating rows beyond the gap.
       check(`${label}: cards have a bottom margin`, s.cardMargin === '14px', s.cardMargin);
+      // Apps and bookmarks must agree on the link target, whichever it is.
+      check(`${label}: link target is consistent and set`,
+        s.appTarget === s.bmTarget && ['_blank', '_self'].includes(s.appTarget),
+        `${s.appTarget} / ${s.bmTarget}`);
 
       // Items drag between the two lists, so the dialogs must offer the same
       // fields — the bookmark one used to hide Description, and bookmarks could

@@ -720,11 +720,85 @@ CATEGORY_GRIP_CSS = (
 )
 
 
+# ── Link target as a user setting ───────────────────────────────────────────
+# The page already decides this, but from an authoring prop:
+#
+#     linkTarget: (this.props.openInNewTab ?? true) ? '_blank' : '_self'
+#
+# props come from the x-dc script's data-props, so it was baked in and not
+# something the dashboard's user could change. This moves it into the theme
+# object, which is what the settings panel already writes to and what the config
+# service already persists — so the choice follows you to any browser.
+#
+# Stored as sameTab, defaulting from the prop with ?? rather than ||: once the
+# user has chosen, `false` is a real value that must not fall through to the
+# default. Until they touch it, the prop still decides, so nothing changes for an
+# existing dashboard.
+#
+# The row, the toggle and its two style strings mirror "Show bookmark icons"
+# exactly, including the polarity — a positive label with the switch on when the
+# behaviour is enabled.
+LINK_TARGET_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "remember the link target in the theme",
+            "      hideBmIcons: !!t.hideBmIcons\n    };",
+            "      hideBmIcons: !!t.hideBmIcons,\n"
+            "      sameTab: t.sameTab ?? !(this.props.openInNewTab ?? true)\n    };",
+        ),
+        (
+            "a toggle for the link target",
+            "  toggleBmIcons = () => this.setTheme({ hideBmIcons: !this.theme().hideBmIcons });",
+            "  toggleBmIcons = () => this.setTheme({ hideBmIcons: !this.theme().hideBmIcons });\n"
+            "  toggleSameTab = () => this.setTheme({ sameTab: !this.theme().sameTab });",
+        ),
+        (
+            "honour the setting when opening a link",
+            "      linkTarget: (this.props.openInNewTab ?? true) ? '_blank' : '_self',",
+            "      linkTarget: th.sameTab ? '_self' : '_blank',",
+        ),
+        (
+            "expose the link-target toggle",
+            "      toggleBmIcons: this.toggleBmIcons,",
+            "      toggleBmIcons: this.toggleBmIcons,\n"
+            "      toggleSameTab: this.toggleSameTab,\n"
+            "      newTabKnob: 'position:absolute;top:2px;left:'"
+            " + (th.sameTab ? '2px' : '20px')"
+            " + ';width:16px;height:16px;border-radius:50%;background:#fff;"
+            "transition:left .16s ease',\n"
+            "      newTabTrack: 'position:relative;width:38px;height:20px;flex:none;"
+            "border-radius:20px;cursor:pointer;transition:background .16s ease;"
+            "background:' + (th.sameTab ? 'rgba(255,255,255,.16)' : 'var(--accent)'),",
+        ),
+        (
+            "a settings row for the link target",
+            '          <span style="font-size:13.5px;color:#dfe3e8">Show bookmark icons</span>\n'
+            '          <span sc-camel-on-click="{{ toggleBmIcons }}"'
+            ' style="{{ bmIconsTrack }}"><span style="{{ bmIconsKnob }}"></span></span>\n'
+            "        </div>",
+            '          <span style="font-size:13.5px;color:#dfe3e8">Show bookmark icons</span>\n'
+            '          <span sc-camel-on-click="{{ toggleBmIcons }}"'
+            ' style="{{ bmIconsTrack }}"><span style="{{ bmIconsKnob }}"></span></span>\n'
+            "        </div>\n"
+            '        <div style="display:flex;align-items:center;'
+            "justify-content:space-between;margin-top:22px;padding-top:18px;"
+            'border-top:1px solid rgba(255,255,255,.08)">\n'
+            '          <span style="font-size:13.5px;color:#dfe3e8">'
+            "Open links in a new tab</span>\n"
+            '          <span sc-camel-on-click="{{ toggleSameTab }}"'
+            ' style="{{ newTabTrack }}"><span style="{{ newTabKnob }}"></span></span>\n'
+            "        </div>",
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
                            + CLIPBOARD_PATCHES + PARITY_PATCHES
-                           + CATEGORY_DRAG_PATCHES):
+                           + CATEGORY_DRAG_PATCHES + LINK_TARGET_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))
