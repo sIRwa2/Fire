@@ -106,6 +106,22 @@ class FaviconStore:
         self.dir = directory
         self.log = log
 
+    def writable(self):
+        """Whether the cache directory can be written to.
+
+        A named volume mounted where the image has no directory is created
+        root-owned, which this unprivileged service cannot write to. Reported as a
+        distinct error instead of surfacing as "no icon found".
+        """
+        try:
+            os.makedirs(self.dir, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=self.dir, prefix=".probe-")
+            os.close(fd)
+            os.unlink(tmp)
+            return True
+        except OSError:
+            return False
+
     def _get(self, url, limit):
         req = urllib.request.Request(url, headers={
             "User-Agent": USER_AGENT,

@@ -218,6 +218,13 @@ class Handler(BaseHTTPRequestHandler):
             url = body.get("url")
             if not isinstance(url, str) or not url.strip():
                 return self._fail(400, '"url" is required')
+            if not _favicons.writable():
+                return self._fail(503, (
+                    "cannot write to %s. A named volume mounted where the image "
+                    "has no directory is created root-owned. Recreate it: "
+                    "docker compose down && docker volume rm "
+                    "<project>_firehome-favicons && docker compose up -d --build"
+                ) % FAVICON_DIR)
             try:
                 name, source = _favicons.fetch(url.strip())
             except ValueError as exc:

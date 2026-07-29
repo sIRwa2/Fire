@@ -824,7 +824,10 @@ FAVICON_PATCHES = tuple(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
     })
-      .then(r => (r.ok ? r.json() : null))
+      .then(r => (r.ok ? r.json() : r.json().catch(() => ({})).then(e => {
+        console.warn('[firehome] no site icon for ' + url + ':', e.error || r.status);
+        return null;
+      })))
       .then(d => {
         if (!d || !d.icon) return;
         const keep = (e) => (e.id === id && e.icon === 'homepage' ? { ...e, icon: d.icon } : e);
@@ -835,7 +838,7 @@ FAVICON_PATCHES = tuple(
           this.persist({ apps: this.state.apps.map(keep) });
         }
       })
-      .catch(() => {});
+      .catch(e => console.warn('[firehome] site icon lookup failed:', e.message));
   };
   saveModal = () => {
     const m = this.state.modal;""",

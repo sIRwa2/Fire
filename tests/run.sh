@@ -43,6 +43,36 @@ for src in {s for stage in stages for s in copy_sources(stage)}:
         "Dockerfile COPYs %s, which does not exist" % src
 print("ok    every COPY source exists")
 
+# Every path a volume is mounted at inside the api must exist in the api image.
+# Where it does not, Docker creates the mountpoint and the fresh volume comes out
+# root-owned, which the unprivileged service cannot write to — the failure is a
+# silent EACCES per operation, and it has already happened twice (/data/icons,
+# then /data/favicons). Checked structurally so a third volume cannot repeat it.
+compose = open(os.path.join(root, "docker-compose.yml"), encoding="utf-8").read()
+api_block = re.search(r"^  api:\n(.*?)(?=^  \S|\Z)", compose, re.S | re.M).group(1)
+# Only the volumes: list — security_opt entries like no-new-privileges:true look
+# just like a mount to a naive split on ":".
+vol_block = re.search(r"^    volumes:\n(.*?)(?=^    \S|\Z)", api_block, re.S | re.M).group(1)
+mounted = set()
+for line in vol_block.splitlines():
+    m = re.match(r"\s*-\s+([^:\s]+):([^:\s]+)", line)
+    if m and not m.group(1).startswith("."):      # named volumes, not bind mounts
+        mounted.add(m.group(2))
+api_dockerfile = open(os.path.join(root, "api", "Dockerfile"), encoding="utf-8").read()
+made = set()
+for m in re.finditer(r"mkdir\s+-p\s+([^\\\n&]+)", api_dockerfile):
+    for path in m.group(1).split():
+        # mkdir -p creates the ancestors too, so /data/icons covers /data.
+        parts = path.rstrip("/").split("/")
+        for i in range(2, len(parts) + 1):
+            made.add("/".join(parts[:i]))
+for target in sorted(mounted):
+    assert target.rstrip("/") in made, (
+        "docker-compose mounts a volume at %s but the api image never creates it, "
+        "so the volume will be root-owned and unwritable" % target
+    )
+print("ok    every api volume mountpoint exists in the image (%s)" % ", ".join(sorted(mounted)))
+
 # Only the first stage's files are visible to localize.py in the container.
 sources = copy_sources(stages[0])
 assert sources, "no COPY sources found in the first build stage"
