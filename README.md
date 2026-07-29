@@ -199,7 +199,7 @@ expose. Don't port-forward this.
 | `api/server.py` | The config store. Stdlib only. |
 | `api/icons.py` | Icon updates from the upstream repo, diffed by git blob sha. |
 | `nginx.conf`, `Dockerfile`, `docker-compose.yml` | Serving and orchestration. |
-| `tools/make-favicon.py` | Generates the favicon set from one set of path data. |
+| `favicon.svg` | The site icon, and the source of truth for it. Replace it and re-run `tools/make-favicon.mjs` to regenerate the raster fallbacks. |
 | `svg/` | The homarr-labs icon set, served at `/icons/` so nothing loads from a CDN. |
 | `iterm/` | iTerm colour schemes; the pool the bundle's 18 built-in themes were drawn from. Not used at runtime. |
 | `verify.sh`, `tests/` | Post-deploy and build-time checks. |
