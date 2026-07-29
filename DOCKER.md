@@ -481,6 +481,26 @@ chosen while the fetch was in flight wins.
 This is the second thing in the stack that reaches the network, and it will
 request whatever URL you save. See the README's risks section.
 
+**If icons never appear, it is almost certainly the volume.** `firehome-favicons`
+mounts at `/data/favicons`, and a named volume mounted where the image has no
+directory is created root-owned — which the unprivileged service cannot write to,
+so every fetch fails with `EACCES`. The api image creates it now, but a volume
+made before that fix stays root-owned and has to be recreated. It only holds
+re-fetchable icons, so nothing is lost:
+
+```sh
+docker compose down
+docker volume rm "$(basename "$PWD")_firehome-favicons"
+docker compose up -d --build
+```
+
+`POST /api/favicon` returns 503 with that command when it cannot write, and the
+page logs the reason to the browser console rather than failing silently.
+
+This is the same mistake `/data/icons` made earlier, so `tests/run.sh` now checks
+every volume mountpoint in the compose file against the `mkdir` list in the api
+image, instead of relying on the two being kept in step by hand.
+
 ## Icon updates
 
 The dashboard can pull new and changed icons from
