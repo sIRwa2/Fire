@@ -464,11 +464,24 @@ host in your dashboard who is looking at it. Fetching once through the api and
 serving from our own origin keeps the CSP unchanged, and means the icon still
 renders when the target is down.
 
+**Some sites simply have no icon**, and that is not a failure to fix. Anything
+that declares nothing, serves an empty `/favicon.ico`, and 404s the conventional
+paths — synthtopia.com does all three — keeps the `homepage` placeholder. The
+sniffer refuses to store their 404 page, which is a 47 KB lump of HTML, as an
+"icon".
+
 **"Or better" is the interesting half.** `/favicon.ico` is usually 16px, so the
 page's own `<link rel>` tags are read first and scored — `apple-touch-icon`
 highest, then `rel=icon` ordered by its `sizes` attribute — with `/favicon.ico`
 kept as the last resort. In practice that is the difference between a 16px `.ico`
 and gitea.com's 20 KB PNG, or Hacker News's SVG.
+
+A page is parsed even when it exceeds the 256 KB read cap, because `<link rel>`
+lives in the `<head>` at the very start. Treating the cap as fatal threw away
+icons that were already in hand: motogp.com is 541 KB of HTML with `</head>` at
+byte 7036, so its 180px `apple-touch-icon` was discarded in favour of a
+`/favicon.ico` that 404s. An *image* is never truncated — half a file is not an
+image.
 
 Results are cached in the `firehome-favicons` volume, named by site, so
 re-running replaces an entry rather than accumulating copies. The page refers to

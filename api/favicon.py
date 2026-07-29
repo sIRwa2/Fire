@@ -36,6 +36,10 @@ import urllib.request
 from html.parser import HTMLParser
 
 PAGE_BYTES = 256 * 1024
+# Tried in order when the page declares no icon of its own. Conventional paths
+# that many sites serve without advertising.
+WELL_KNOWN = ("/favicon.ico", "/apple-touch-icon.png",
+              "/apple-touch-icon-precomposed.png", "/favicon.png")
 ICON_BYTES = 512 * 1024
 TIMEOUT = 6
 USER_AGENT = "firehome-favicon"
@@ -122,7 +126,16 @@ class FaviconStore:
         except OSError:
             return False
 
-    def _get(self, url, limit):
+    def _get(self, url, limit, truncate=False):
+        """Fetch a URL, capped at `limit` bytes.
+
+        truncate=True keeps the first `limit` bytes instead of failing, which is
+        what a page wants: <link rel=icon> lives in the <head>, at the very start.
+        motogp.com is 541 KB with </head> at byte 7036 — treating the cap as fatal
+        threw away a perfectly good 180px apple-touch-icon and fell through to a
+        /favicon.ico that 404s. An image is never truncated, because half a file
+        is not an image.
+        """
         req = urllib.request.Request(url, headers={
             "User-Agent": USER_AGENT,
             "Accept": "text/html,image/*;q=0.9,*/*;q=0.5",
@@ -133,14 +146,16 @@ class FaviconStore:
                 raise ValueError("refused a redirect away from http(s)")
             data = resp.read(limit + 1)
             if len(data) > limit:
-                raise ValueError("larger than %d bytes" % limit)
+                if not truncate:
+                    raise ValueError("larger than %d bytes" % limit)
+                data = data[:limit]
             return resp.geturl(), data
 
     def candidates(self, url):
         """Icon URLs for a page, best first, always ending at /favicon.ico."""
         out = []
         try:
-            final, page = self._get(url, PAGE_BYTES)
+            final, page = self._get(url, PAGE_BYTES, truncate=True)
             parser = LinkIcons()
             parser.feed(page.decode("utf-8", "replace"))
             for score, href in sorted(parser.found, key=lambda p: -p[0]):
@@ -151,9 +166,10 @@ class FaviconStore:
             self.log("favicon: could not read %s: %r" % (url, exc))
             final = url
         root = urllib.parse.urlsplit(final)
-        fallback = urllib.parse.urlunsplit((root.scheme, root.netloc, "/favicon.ico", "", ""))
-        if fallback not in out:
-            out.append(fallback)
+        for path in WELL_KNOWN:
+            guess = urllib.parse.urlunsplit((root.scheme, root.netloc, path, "", ""))
+            if guess not in out:
+                out.append(guess)
         return out
 
     def fetch(self, url):

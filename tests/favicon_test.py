@@ -53,7 +53,7 @@ try:
 
     fetched = []
 
-    def stub(url, limit):
+    def stub(url, limit, truncate=False):
         fetched.append(url)
         if url == "http://site.test/":
             return url, PAGE
@@ -70,8 +70,14 @@ try:
     check("relative hrefs resolve against the page",
           "http://site.test/mid.png" in cands, cands)
     check("a stylesheet link is ignored", not any("css" in c for c in cands), cands)
-    check("/favicon.ico is always the last resort",
-          cands[-1] == "http://site.test/favicon.ico", cands[-1])
+    # Declared icons come first, then the conventional guesses, /favicon.ico
+    # leading those. It is no longer last outright — further well-known paths
+    # follow it — but it must always be present and rank below anything declared.
+    check("/favicon.ico follows the declared icons",
+          cands.index("http://site.test/favicon.ico") == 3, cands)
+    check("the conventional guesses are all appended",
+          [c.rsplit("/", 1)[-1] for c in cands[3:]]
+          == [p.lstrip("/") for p in favicon_mod.WELL_KNOWN], cands[3:])
 
     name, source = store.fetch("http://site.test/")
     check("stores the best candidate", name and name.endswith(".png"), name)
@@ -82,17 +88,51 @@ try:
 
     # A site with no usable image must not leave anything behind.
     empty = favicon_mod.FaviconStore(os.path.join(work, "fav2"), log=lambda m: None)
-    empty._get = lambda url, limit: (url, b"<!DOCTYPE html><html></html>")
+    empty._get = lambda url, limit, truncate=False: (url, b"<!DOCTYPE html><html></html>")
     name2, _ = empty.fetch("http://nothing.test/")
     check("no icon found means nothing stored", name2 is None, name2)
 
     # Re-fetching the same site replaces rather than accumulates.
-    store._get = lambda url, limit: (url, ICO) if url.endswith(".ico") else stub(url, limit)
     store._get = stub
     before = sorted(os.listdir(store.dir))
     store.fetch("http://site.test/")
     check("re-fetching does not accumulate copies",
           sorted(os.listdir(store.dir)) == before, os.listdir(store.dir))
+
+    # A page over the size cap must still be parsed, not discarded. This is the
+    # motogp.com case: 541 KB of HTML with </head> at byte 7036, so the icon was
+    # in hand and thrown away, falling through to a /favicon.ico that 404s.
+    big = favicon_mod.FaviconStore(os.path.join(work, "fav3"), log=lambda m: None)
+    HUGE = (b"<html><head><link rel='apple-touch-icon' sizes='180x180' href='/big.png'>"
+            b"</head><body>" + b"x" * (favicon_mod.PAGE_BYTES * 2) + b"</body></html>")
+
+    def big_get(url, limit, truncate=False):
+        if url.endswith(".png"):
+            return url, PNG
+        if len(HUGE) > limit and not truncate:
+            raise ValueError("larger than %d bytes" % limit)
+        return url, HUGE[:limit]
+
+    big._get = big_get
+    cands = big.candidates("http://huge.test/page")
+    check("an oversized page is still parsed for icons",
+          cands and cands[0] == "http://huge.test/big.png", cands[:2])
+    name3, _ = big.fetch("http://huge.test/page")
+    check("and its icon is stored", name3 and name3.endswith(".png"), name3)
+
+    # Conventional paths are tried when the page declares nothing.
+    bare = favicon_mod.FaviconStore(os.path.join(work, "fav4"), log=lambda m: None)
+    bare._get = lambda url, limit, truncate=False: (
+        (url, PNG) if url.endswith("/apple-touch-icon.png")
+        else (url, b"<html><head></head></html>") if url.endswith("/page")
+        else (_ for _ in ()).throw(OSError("404")))
+    guesses = bare.candidates("http://bare.test/page")
+    check("well-known paths are tried in order",
+          [g.rsplit("/", 1)[-1] for g in guesses][:2] == ["favicon.ico", "apple-touch-icon.png"],
+          guesses)
+    name4, src4 = bare.fetch("http://bare.test/page")
+    check("an undeclared apple-touch-icon is found",
+          name4 and src4.endswith("/apple-touch-icon.png"), (name4, src4))
 
     for bad in ("file:///etc/passwd", "ftp://host/x", "not-a-url", "javascript:alert(1)"):
         try:
