@@ -202,6 +202,20 @@ assert "sameTab" in re.search(r"  theme\(\) \{.*?\n  \}", tpl, re.S).group(0), \
     "sameTab is not part of theme(), so it would not persist"
 print("ok    link target is a persisted setting")
 
+# Falling back to the site's own icon. The fetch is server-side because the CSP
+# refuses a cross-origin <img>, so the page only ever references /favicons/.
+assert "if (name.slice(0, 4) === 'fav:') return '/favicons/' + name.slice(4);" in tpl, \
+    "iconUrl cannot resolve a fetched site icon"
+assert "siteIcon = (id, url, groupId)" in tpl, "the site-icon fetch is missing"
+assert "if (!m.icon) this.siteIcon(entry.id, url, null);" in tpl, \
+    "apps do not request a site icon"
+assert "this.siteIcon(m.editId || (saved && saved.id), url, m.groupId);" in tpl, \
+    "bookmarks do not request a site icon"
+# The placeholder must only be replaced if it is still the placeholder.
+assert "e.icon === 'homepage'" in tpl, \
+    "a site icon could overwrite an icon chosen in the meantime"
+print("ok    site icon fallback wired")
+
 print("ok    header lock/settings buttons flattened, locked state preserved")
 
 # The picker takes its list from the service so an update shows up without a
@@ -247,6 +261,10 @@ PY
 echo
 echo "== icon updater (offline) =="
 python3 "$ROOT/tests/icons_test.py"
+
+echo
+echo "== site icon fetcher (offline) =="
+python3 "$ROOT/tests/favicon_test.py"
 
 echo
 echo "== icon -> title suggestion =="

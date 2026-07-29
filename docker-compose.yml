@@ -15,6 +15,8 @@ services:
     volumes:
       # Updated icons, served in front of the set baked into the image.
       - firehome-icons:/usr/share/nginx/html/icons-live:ro
+      # Icons fetched from the sites themselves.
+      - firehome-favicons:/usr/share/nginx/html/favicons:ro
     depends_on:
       api:
         condition: service_healthy
@@ -37,6 +39,7 @@ services:
     volumes:
       - firehome-data:/data
       - firehome-icons:/data/icons
+      - firehome-favicons:/data/favicons
       # The shipped icon set, read-only, so the updater can diff against it by
       # blob sha and download only what actually changed.
       - ./svg:/srv/icons-baked:ro
@@ -51,3 +54,4 @@ services:
 volumes:
   firehome-data:
   firehome-icons:
+  firehome-favicons:

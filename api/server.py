@@ -6,6 +6,7 @@
   POST   /config   same as PUT (navigator.sendBeacon can only POST)
   DELETE /config   wipe — "start clean"
   GET    /icons          -> {"icons": [...], "count": N, "status": {...}}
+  POST   /favicon        <- {"url": "..."}  fetch and cache that site's best icon
   POST   /icons/update   start an update from GitHub; 409 while one is running
   GET    /icons/status   progress and the last result
   GET    /healthz
@@ -28,6 +29,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import favicon as favicon_mod
 import icons as icons_mod
 
 DATA_DIR = os.environ.get("FIREHOME_DATA", "/data")
@@ -44,9 +46,11 @@ EMPTY = {"rev": 0, "updated": None, "data": {}}
 ICONS_DIR = os.path.join(DATA_DIR, "icons")
 BAKED_ICONS = os.environ.get("FIREHOME_BAKED_ICONS", "/srv/icons-baked")
 ICONS_STATE = os.path.join(DATA_DIR, "icons-state.json")
+FAVICON_DIR = os.path.join(DATA_DIR, "favicons")
 
 _lock = threading.Lock()
 _icons = None  # set in main(), so the paths are configured in one place
+_favicons = None
 
 
 def log(msg):
@@ -206,6 +210,24 @@ class Handler(BaseHTTPRequestHandler):
     do_HEAD = do_GET
 
     def _save(self):
+        if self.path == "/favicon":
+            try:
+                body = self._body()
+            except (ValueError, json.JSONDecodeError) as exc:
+                return self._fail(400, str(exc))
+            url = body.get("url")
+            if not isinstance(url, str) or not url.strip():
+                return self._fail(400, '"url" is required')
+            try:
+                name, source = _favicons.fetch(url.strip())
+            except ValueError as exc:
+                return self._fail(400, str(exc))
+            except Exception as exc:
+                log("favicon: %r" % (exc,))
+                return self._fail(502, "could not fetch an icon: %s" % exc)
+            if not name:
+                return self._fail(404, "no usable icon found")
+            return self._send(200, {"icon": "fav:" + name, "source": source})
         if self.path == "/icons/update":
             if not _icons.start():
                 return self._fail(409, "an update is already running")
@@ -243,9 +265,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    global _icons
+    global _icons, _favicons
     os.makedirs(DATA_DIR, exist_ok=True)
     _icons = icons_mod.IconStore(ICONS_DIR, BAKED_ICONS, ICONS_STATE, log=log)
+    _favicons = favicon_mod.FaviconStore(FAVICON_DIR, log=log)
     log("icons: overlay=%s baked=%s (%d available)"
         % (ICONS_DIR, BAKED_ICONS, len(_icons.names())))
     # Repairs icons written before they were made world-readable, so an existing

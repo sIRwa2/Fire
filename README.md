@@ -104,6 +104,7 @@ options that shipped with the page, plus:
 | | |
 | --- | --- |
 | **Open links in a new tab** | On by default. Applies to both apps and bookmarks. |
+| *(automatic)* | Saving an app or bookmark without picking an icon fetches the site's own. See [DOCKER.md](DOCKER.md#falling-back-to-the-sites-own-icon). |
 | **Icons — Check for updates** | Pulls new icons from upstream. See [DOCKER.md](DOCKER.md#icon-updates). |
 
 Both are stored server-side with the rest of your config, so they follow you to
@@ -147,6 +148,13 @@ actually bite you.
   which never executes script, and `/icons/` is served under its own
   `default-src 'none'; sandbox` policy. A scripted icon still would not run, but
   the reason it cannot is a header, not the file being harmless.
+- **The site-icon fetcher will request any URL you give it.** Saving an entry
+  without an icon makes the container fetch that address server-side, and it
+  cannot refuse private ranges — pointing at LAN services is the whole point. On
+  an unauthenticated endpoint that is a usable internal probe: a caller learns
+  whether a host answers and serves an image. It is bounded rather than blocked —
+  http(s) only, 6s timeouts, 256 KB of HTML, 512 KB per icon, at most six
+  candidates, and bytes are stored only if they parse as an image.
 - **Update runs are unauthenticated too**, so anyone on the LAN can make the
   container fetch from GitHub — and the first run pulls ~690 raster files, around
   28 MB. Concurrent runs are refused, downloads are capped at 1 MB per file and

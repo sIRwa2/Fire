@@ -794,11 +794,78 @@ LINK_TARGET_PATCHES = tuple(
 )
 
 
+# ── Falling back to the site's own icon ─────────────────────────────────────
+# Saving without picking an icon used to store 'homepage', a generic glyph. Now
+# the service is asked for the site's own icon and the entry is updated when it
+# arrives, so the save is never blocked on a slow or unreachable host.
+#
+# The fetch has to happen server-side: the page's CSP is
+# img-src 'self' data: blob:, so a cross-origin <img> is refused outright.
+# Widening that to img-src * would end the no-external-requests property and leak
+# the dashboard's contents to every host in it. See api/favicon.py.
+#
+# 'homepage' stays as the immediate placeholder and is only replaced if it is
+# still there when the answer comes back, so a choice made in the meantime wins.
+FAVICON_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "resolve a fetched site icon",
+            "    return '/icons/' + name",
+            "    if (name.slice(0, 4) === 'fav:') return '/favicons/' + name.slice(4);\n"
+            "    return '/icons/' + name",
+        ),
+        (
+            "ask for the site's icon when none was picked",
+            "  saveModal = () => {\n    const m = this.state.modal;",
+            """  siteIcon = (id, url, groupId) => {
+    fetch('/api/favicon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!d || !d.icon) return;
+        const keep = (e) => (e.id === id && e.icon === 'homepage' ? { ...e, icon: d.icon } : e);
+        if (groupId) {
+          this.persist({ groups: this.state.groups.map(g => g.id === groupId
+            ? { ...g, bookmarks: g.bookmarks.map(keep) } : g) });
+        } else {
+          this.persist({ apps: this.state.apps.map(keep) });
+        }
+      })
+      .catch(() => {});
+  };
+  saveModal = () => {
+    const m = this.state.modal;""",
+        ),
+        (
+            "kick off the app icon fetch after saving",
+            "      this.persist({ apps, modal: null });",
+            "      this.persist({ apps, modal: null });\n"
+            "      if (!m.icon) this.siteIcon(entry.id, url, null);",
+        ),
+        (
+            "kick off the bookmark icon fetch after saving",
+            "      this.persist({ groups, modal: null });",
+            "      this.persist({ groups, modal: null });\n"
+            "      if (!m.icon) {\n"
+            "        const saved = (groups.find(g => g.id === m.groupId) || { bookmarks: [] })\n"
+            "          .bookmarks.slice(-1)[0];\n"
+            "        this.siteIcon(m.editId || (saved && saved.id), url, m.groupId);\n"
+            "      }",
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
                            + CLIPBOARD_PATCHES + PARITY_PATCHES
-                           + CATEGORY_DRAG_PATCHES + LINK_TARGET_PATCHES):
+                           + CATEGORY_DRAG_PATCHES + LINK_TARGET_PATCHES
+                           + FAVICON_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))

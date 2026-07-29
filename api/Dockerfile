@@ -12,7 +12,7 @@ RUN apk add --no-cache ca-certificates \
     && mkdir -p /data/icons \
     && chown -R app:app /data
 
-COPY server.py icons.py /app/
+COPY server.py icons.py favicon.py /app/
 
 USER app
 ENV FIREHOME_DATA=/data FIREHOME_API_PORT=8080 PYTHONUNBUFFERED=1

@@ -450,6 +450,37 @@ fallen back to the prop. Verified by toggling both ways — the server holds
 
 Apps and bookmarks share the same `linkTarget`, so they cannot disagree.
 
+## Falling back to the site's own icon
+
+Saving an app or bookmark without picking an icon fetches the site's own, and the
+entry updates when it arrives — the save is never blocked on a slow or
+unreachable host, which keeps `homepage` showing in the meantime.
+
+**It has to be fetched server-side.** The page's CSP is
+`img-src 'self' data: blob:`, so a cross-origin `<img>` is refused outright —
+confirmed in Chromium, which logs the violation. Widening it to `img-src *` would
+end the guarantee that the page makes no external requests and would tell every
+host in your dashboard who is looking at it. Fetching once through the api and
+serving from our own origin keeps the CSP unchanged, and means the icon still
+renders when the target is down.
+
+**"Or better" is the interesting half.** `/favicon.ico` is usually 16px, so the
+page's own `<link rel>` tags are read first and scored — `apple-touch-icon`
+highest, then `rel=icon` ordered by its `sizes` attribute — with `/favicon.ico`
+kept as the last resort. In practice that is the difference between a 16px `.ico`
+and gitea.com's 20 KB PNG, or Hacker News's SVG.
+
+Results are cached in the `firehome-favicons` volume, named by site, so
+re-running replaces an entry rather than accumulating copies. The page refers to
+them as `fav:<name>`, which `iconUrl` maps to `/favicons/<name>` — that keeps
+them out of the icon picker, which enumerates the icon directories.
+
+The placeholder is only replaced if it is *still* the placeholder, so an icon
+chosen while the fetch was in flight wins.
+
+This is the second thing in the stack that reaches the network, and it will
+request whatever URL you save. See the README's risks section.
+
 ## Icon updates
 
 The dashboard can pull new and changed icons from

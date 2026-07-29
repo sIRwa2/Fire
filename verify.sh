@@ -196,6 +196,12 @@ else
 fi
 # A named volume mounted where the image has no directory comes out root-owned,
 # which the unprivileged api cannot write to — every download then fails EACCES.
+# The site-icon fetcher shares the api's network path; a bad URL must be refused
+# rather than attempted.
+badfav=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/favicon" \
+    -H 'Content-Type: application/json' -d '{"url":"file:///etc/passwd"}')
+check "site-icon fetcher refuses a non-http url" 400 "$badfav"
+
 if printf '%s' "$icons" | grep -q '"writable": *true'; then
     ok "icon storage is writable"
 else
