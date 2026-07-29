@@ -960,12 +960,49 @@ LOCKED_HOVER_PATCHES = tuple(
 )
 
 
+# ── Remembering the lock ────────────────────────────────────────────────────
+# `locked` lived only in component state, so it reset to unlocked on every reload
+# — which makes it a per-visit gesture rather than a setting, and undoes itself
+# the moment you refresh.
+#
+# It rides on the theme object, alongside the other preferences the settings panel
+# writes, so the config service persists it and it follows you to any browser. The
+# initial read happens after this.state.theme is assigned in the constructor and
+# before the first render, so nothing flashes unlocked on the way in.
+#
+# setTheme is what writes and persists, so toggleLock has to call it rather than
+# only setState — the two are kept in step deliberately: everything else reads
+# this.state.locked, and rewriting all of those to read the theme would be a much
+# wider change for no gain.
+LOCK_PERSIST_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "restore the lock on load",
+            "    this.state.themeOpen = false;",
+            "    this.state.themeOpen = false;\n"
+            "    this.state.locked = !!this.state.theme.locked;",
+        ),
+        (
+            "persist the lock when toggled",
+            "  toggleLock = () => this.setState(s => ({ locked: !s.locked }));",
+            "  toggleLock = () => {\n"
+            "    const locked = !this.state.locked;\n"
+            "    this.setState({ locked });\n"
+            "    this.setTheme({ locked });\n"
+            "  };",
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
                            + CLIPBOARD_PATCHES + PARITY_PATCHES
                            + CATEGORY_DRAG_PATCHES + LINK_TARGET_PATCHES
-                           + FAVICON_PATCHES + LOCKED_HOVER_PATCHES):
+                           + FAVICON_PATCHES + LOCKED_HOVER_PATCHES
+                           + LOCK_PERSIST_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))

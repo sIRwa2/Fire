@@ -536,6 +536,16 @@ on hover *and stayed clickable*, so an app could be deleted while "locked". Lock
 now hides them, and this setting restores the old behaviour for anyone who wants
 the controls regardless.
 
+**The lock itself is remembered.** It lived only in component state, so it reset to
+unlocked on every reload — a per-visit gesture rather than a setting. It now rides
+on the theme object with the other preferences, so the config service persists it
+and it applies on every browser. It is read back after `this.state.theme` is
+assigned in the constructor and before the first render, so nothing flashes
+unlocked on the way in, and `toggleLock` writes through `setTheme` rather than only
+`setState`. Everything else still reads `this.state.locked`; the two are kept in
+step deliberately, since rewriting every reader would be a much wider change for
+no gain.
+
 It works off a `data-locked` attribute on the root plus one CSS rule, rather than
 wrapping more markup in `sc-if`. `pointer-events` matters as much as `opacity`:
 these controls are revealed by opacity alone, and an invisible button is still

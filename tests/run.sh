@@ -266,6 +266,17 @@ assert style.rstrip().endswith("pointer-events:none!important}"), \
 assert ".hdr-actions" not in locked_rule, "the lock would disable its own button"
 print("ok    lock hides the hover controls, with a setting to keep them")
 
+# The lock is a stored preference, not a per-visit gesture. It lived only in
+# component state, so it reset to unlocked on every reload.
+assert "this.state.locked = !!this.state.theme.locked;" in tpl, \
+    "the lock is not restored on load"
+assert "this.setTheme({ locked });" in tpl, \
+    "toggleLock does not persist, so the lock would reset on reload"
+# It has to be read after this.state.theme is assigned, or it would always be false.
+assert tpl.index("this.state.theme = theme || {};") < tpl.index("this.state.locked = !!"), \
+    "the lock is restored before the theme is assigned"
+print("ok    lock state is persisted")
+
 print("ok    header lock/settings buttons flattened, locked state preserved")
 
 # The picker takes its list from the service so an update shows up without a
