@@ -35,6 +35,7 @@ BASE=http://192.168.0.108:8080 ./verify.sh
 node tests/render.mjs http://192.168.0.108:8080   # real WebKit + Chromium; needs playwright
 node tests/lock-state.mjs http://192.168.0.108:8080   # what the lock hides; needs playwright
 node tests/lock-persist.mjs http://192.168.0.108:8080 # that the lock survives a reload
+node tests/theme-select.mjs http://192.168.0.108:8080 # the theme dropdown
 ```
 
 `verify.sh` is non-destructive — its config write uses a scratch key and removes

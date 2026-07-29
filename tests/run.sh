@@ -277,6 +277,20 @@ assert tpl.index("this.state.theme = theme || {};") < tpl.index("this.state.lock
     "the lock is restored before the theme is assigned"
 print("ok    lock state is persisted")
 
+# The 18 themes are a dropdown, not a nine-row grid of buttons.
+assert '<select value="{{ themeIndex }}"' in tpl, "the theme select is missing"
+assert '<option value="{{ t.i }}">{{ t.name }}</option>' in tpl, "the options are missing"
+assert 'button data-i="{{ t.i }}"' not in tpl, "the old theme grid is still there"
+# A controlled select needs to know the active preset, and the theme is stored as
+# colours rather than an index — so it is matched, with '' meaning Custom.
+assert "themeIndex: (() => {" in tpl and "return i < 0 ? '' : String(i);" in tpl, \
+    "themeIndex does not resolve the active preset"
+assert '<option value="">Custom</option>' in tpl, \
+    "no Custom entry, so hand-picked colours would blank the select"
+assert "chooseTheme = (e) => {" in tpl and "if (raw === '') return;" in tpl, \
+    "choosing Custom should be a no-op"
+print("ok    themes are a dropdown")
+
 print("ok    header lock/settings buttons flattened, locked state preserved")
 
 # The picker takes its list from the service so an update shows up without a

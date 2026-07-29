@@ -571,6 +571,28 @@ that tie and left the add button visible while locked on an empty dashboard. Equ
 specificity is then broken by source order, which is why `LOCKED_CSS` is
 concatenated last.
 
+## Themes in a dropdown
+
+The 18 built-in themes were a two-column grid of buttons — nine rows, most of the
+settings panel. They are one `<select>` now.
+
+The select is controlled, so it has to know which preset is active, and a theme is
+stored as `bg`/`fg`/`accent` rather than as a name or index. `themeIndex` matches
+the stored colours against the list using the same comparison the grid used for
+its highlight, and yields `''` when they match none — which happens the moment the
+accent or background picker above is touched. That case gets an explicit **Custom**
+entry rather than a blank select, and choosing it is a no-op.
+
+The cost is the colour swatch each button carried. The accent and background
+pickers sit directly above, so the preview is still there. Option popups are drawn
+by the OS, so `color-scheme: dark` is set to stop the list rendering light against
+the panel.
+
+`tests/theme-select.mjs` checks that `sc-for` really does produce `<option>`
+elements through the runtime, that choosing one applies and persists it, that the
+choice comes back selected after a reload, and that a hand-picked colour falls back
+to Custom.
+
 ## Icon updates
 
 The dashboard can pull new and changed icons from

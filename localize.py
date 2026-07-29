@@ -996,13 +996,88 @@ LOCK_PERSIST_PATCHES = tuple(
 )
 
 
+# ── Themes in a dropdown ────────────────────────────────────────────────────
+# The 18 built-in themes were a two-column grid of buttons — nine rows, most of
+# the settings panel. A select is one row.
+#
+# The select is controlled, so it needs to know which preset is active, and the
+# theme is stored as bg/fg/accent rather than as a name or index. themeIndex finds
+# the matching preset using the same comparison the grid used for its highlight,
+# and yields '' when the colours match none of them — which happens as soon as the
+# colour pickers above are touched. That case gets an explicit "Custom" option
+# instead of a blank select, and choosing it is a no-op.
+#
+# The trade-off is losing the colour swatch each button carried; the panel's own
+# accent and background pickers sit directly above, so the preview is still there.
+# Option lists are drawn by the OS, so colour-scheme:dark is set to stop the popup
+# rendering light against this panel.
+THEME_SELECT_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "which preset is currently active",
+            "      themeList: (s.themes || []).map((t, i) => ({",
+            "      themeIndex: (() => {\n"
+            "        const i = (s.themes || []).findIndex("
+            "t => t.bg === th.bg && t.accent === th.accent);\n"
+            "        return i < 0 ? '' : String(i);\n"
+            "      })(),\n"
+            "      themeList: (s.themes || []).map((t, i) => ({",
+        ),
+        (
+            "choosing a theme from the dropdown",
+            "  pickTheme = (e) => {",
+            "  chooseTheme = (e) => {\n"
+            "    const raw = e.currentTarget.value;\n"
+            "    if (raw === '') return;\n"
+            "    const t = (this.state.themes || [])[+raw];\n"
+            "    if (t) this.setTheme({ bg: t.bg, fg: t.fg, accent: t.accent });\n"
+            "  };\n"
+            "  pickTheme = (e) => {",
+        ),
+        (
+            "expose the dropdown handler",
+            "      pickTheme: this.pickTheme,",
+            "      pickTheme: this.pickTheme,\n"
+            "      chooseTheme: this.chooseTheme,",
+        ),
+        (
+            "replace the theme grid with a select",
+            '        <div style="display:grid;grid-template-columns:'
+            'repeat(2,minmax(0,1fr));gap:9px">\n'
+            '          <sc-for list="{{ themeList }}" as="t"'
+            ' hint-placeholder-count="8">\n'
+            '            <button data-i="{{ t.i }}"'
+            ' sc-camel-on-click="{{ pickTheme }}" style="{{ t.style }}">\n'
+            '              <span style="{{ t.dotStyle }}"></span>\n'
+            '              <span style="white-space:nowrap;overflow:hidden;'
+            'text-overflow:ellipsis">{{ t.name }}</span>\n'
+            "            </button>\n"
+            "          </sc-for>\n"
+            "        </div>",
+            '        <select value="{{ themeIndex }}"'
+            ' sc-camel-on-change="{{ chooseTheme }}" style="width:100%;'
+            "background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);"
+            "border-radius:7px;padding:10px 12px;font-size:14px;color:#eceef1;"
+            'font-family:inherit;color-scheme:dark;cursor:pointer">\n'
+            '          <option value="">Custom</option>\n'
+            '          <sc-for list="{{ themeList }}" as="t"'
+            ' hint-placeholder-count="8">\n'
+            '            <option value="{{ t.i }}">{{ t.name }}</option>\n'
+            "          </sc-for>\n"
+            "        </select>",
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
                            + CLIPBOARD_PATCHES + PARITY_PATCHES
                            + CATEGORY_DRAG_PATCHES + LINK_TARGET_PATCHES
                            + FAVICON_PATCHES + LOCKED_HOVER_PATCHES
-                           + LOCK_PERSIST_PATCHES):
+                           + LOCK_PERSIST_PATCHES + THEME_SELECT_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))
