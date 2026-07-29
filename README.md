@@ -33,6 +33,7 @@ FIREHOME_BIND=192.168.1.50 FIREHOME_PORT=80 docker compose up -d
 BASE=http://192.168.0.108:8080 ./verify.sh
 ./tests/run.sh                           # build-time checks; python3 + node, no Docker
 node tests/render.mjs http://192.168.0.108:8080   # real WebKit + Chromium; needs playwright
+node tests/lock-state.mjs http://192.168.0.108:8080   # what the lock hides; needs playwright
 ```
 
 `verify.sh` is non-destructive — its config write uses a scratch key and removes
@@ -104,10 +105,11 @@ options that shipped with the page, plus:
 | | |
 | --- | --- |
 | **Open links in a new tab** | On by default. Applies to both apps and bookmarks. |
+| **Show hover controls when locked** | Off by default, so locking hides the add/edit/delete affordances. See [DOCKER.md](DOCKER.md#what-the-lock-actually-locks). |
 | *(automatic)* | Saving an app or bookmark without picking an icon fetches the site's own, falling back to a coloured tile with its initial. See [DOCKER.md](DOCKER.md#falling-back-to-the-sites-own-icon). |
 | **Icons — Check for updates** | Pulls new icons from upstream. See [DOCKER.md](DOCKER.md#icon-updates). |
 
-Both are stored server-side with the rest of your config, so they follow you to
+These are stored server-side with the rest of your config, so they follow you to
 any browser.
 
 ## Risks and trade-offs

@@ -525,6 +525,42 @@ This is the same mistake `/data/icons` made earlier, so `tests/run.sh` now check
 every volume mountpoint in the compose file against the `mkdir` list in the api
 image, instead of relying on the two being kept in step by hand.
 
+## What the lock actually locks
+
+**Settings → Show hover controls when locked.** Off by default.
+
+The lock barely locked anything. It stops dragging and makes the titles
+non-editable, and only the category delete sits inside `sc-if editable` — the add
+buttons, the card edit/delete overlay and the bookmark delete all still appeared
+on hover *and stayed clickable*, so an app could be deleted while "locked". Locked
+now hides them, and this setting restores the old behaviour for anyone who wants
+the controls regardless.
+
+It works off a `data-locked` attribute on the root plus one CSS rule, rather than
+wrapping more markup in `sc-if`. `pointer-events` matters as much as `opacity`:
+these controls are revealed by opacity alone, and an invisible button is still
+perfectly clickable.
+
+Two things it deliberately leaves alone:
+
+- **`.hdr-actions`** — the lock and settings buttons live there, so disabling them
+  would make the state unescapable.
+- **The settings panel's own close button**, which is also `data-nodrag="1"` and
+  sits inside the root. The rule is scoped to `.app-grid` and `.bm-cat` rather than
+  `[data-nodrag]` at large, or the panel could not be closed while locked.
+
+The label says *hover* controls, not *edit* controls, because that is what it
+covers. The category delete and the drag grip are removed from the DOM by
+`editable` when locked, and this setting does not undo that — doing so would
+re-enable `contentEditable` titles along with them, since both hang off the same
+flag.
+
+Each selector carries its grid (`[data-locked="1"] .app-grid .add-app`) to reach
+(0,3,0) and match `EMPTY_STATE_CSS`'s `:only-child` rule; the weaker version lost
+that tie and left the add button visible while locked on an empty dashboard. Equal
+specificity is then broken by source order, which is why `LOCKED_CSS` is
+concatenated last.
+
 ## Icon updates
 
 The dashboard can pull new and changed icons from

@@ -863,12 +863,109 @@ FAVICON_PATCHES = tuple(
 )
 
 
+# ── Whether the lock actually hides the edit controls ───────────────────────
+# The lock barely locked anything. It stops dragging and makes the titles
+# non-editable, and only the category delete sits inside sc-if editable — the add
+# buttons, the card edit/delete overlay and the bookmark delete all still appeared
+# on hover *and stayed clickable*, so an app could be deleted while "locked".
+#
+# Locked now hides them, which is what the lock reads as, and the setting restores
+# the old behaviour for anyone who wants the controls regardless.
+#
+# The label says "hover controls" rather than "edit controls" on purpose. The
+# category delete and the drag grip live inside sc-if editable and are *removed
+# from the DOM* when locked, which this setting does not and should not undo —
+# turning them back on would mean re-enabling contentEditable titles with them,
+# since both hang off the same `editable` flag.
+#
+# Done in CSS off a data-locked attribute on the root rather than by wrapping more
+# markup in sc-if, so it is one rule and one prop. pointer-events matters as much
+# as opacity: these are hover-revealed by opacity alone, and an invisible button is
+# still perfectly clickable.
+#
+# Scoped to .app-grid and .bm-cat, not [data-nodrag] at large: the settings
+# panel's own close button is also data-nodrag="1" and sits inside the root, so a
+# blanket rule would leave the panel impossible to close while locked. .hdr-actions
+# is left alone for the same reason — the lock button itself lives there.
+# Each selector carries its grid so it reaches (0,3,0), matching
+# EMPTY_STATE_CSS's `.app-grid .add-app:only-child`. Without that qualifier this
+# lost the tie on an empty dashboard and the add button stayed visible while
+# locked. Equal specificity is then broken by order, which is why LOCKED_CSS is
+# concatenated last.
+LOCKED_CSS = (
+    '[data-locked="1"] .app-grid .add-app,'
+    '[data-locked="1"] .bm-grid .new-cat,'
+    '[data-locked="1"] .bm-cat > button,'
+    '[data-locked="1"] .app-grid [data-nodrag="1"],'
+    '[data-locked="1"] .bm-cat [data-nodrag="1"]'
+    "{opacity:0!important;pointer-events:none!important}"
+)
+
+LOCKED_HOVER_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "remember whether the lock hides the edit controls",
+            "      sameTab: t.sameTab ?? !(this.props.openInNewTab ?? true)\n    };",
+            "      sameTab: t.sameTab ?? !(this.props.openInNewTab ?? true),\n"
+            "      lockedHover: !!t.lockedHover\n    };",
+        ),
+        (
+            "a toggle for it",
+            "  toggleSameTab = () => this.setTheme({ sameTab: !this.theme().sameTab });",
+            "  toggleSameTab = () => this.setTheme({ sameTab: !this.theme().sameTab });\n"
+            "  toggleLockedHover = () =>"
+            " this.setTheme({ lockedHover: !this.theme().lockedHover });",
+        ),
+        (
+            "flag the locked state on the root",
+            '<div ref="{{ rootRef }}" style="min-height:100vh;',
+            '<div ref="{{ rootRef }}" data-locked="{{ lockedFlag }}"'
+            ' style="min-height:100vh;',
+        ),
+        (
+            "expose the locked flag and its toggle",
+            "      toggleSameTab: this.toggleSameTab,",
+            "      toggleSameTab: this.toggleSameTab,\n"
+            "      lockedFlag: (s.locked && !th.lockedHover) ? '1' : '0',\n"
+            "      toggleLockedHover: this.toggleLockedHover,\n"
+            "      lockedHoverKnob: 'position:absolute;top:2px;left:'"
+            " + (th.lockedHover ? '20px' : '2px')"
+            " + ';width:16px;height:16px;border-radius:50%;background:#fff;"
+            "transition:left .16s ease',\n"
+            "      lockedHoverTrack: 'position:relative;width:38px;height:20px;"
+            "flex:none;border-radius:20px;cursor:pointer;"
+            "transition:background .16s ease;background:'"
+            " + (th.lockedHover ? 'var(--accent)' : 'rgba(255,255,255,.16)'),",
+        ),
+        (
+            "a settings row for it",
+            '          <span sc-camel-on-click="{{ toggleSameTab }}"'
+            ' style="{{ newTabTrack }}"><span style="{{ newTabKnob }}"></span></span>\n'
+            "        </div>",
+            '          <span sc-camel-on-click="{{ toggleSameTab }}"'
+            ' style="{{ newTabTrack }}"><span style="{{ newTabKnob }}"></span></span>\n'
+            "        </div>\n"
+            '        <div style="display:flex;align-items:center;'
+            "justify-content:space-between;margin-top:22px;padding-top:18px;"
+            'border-top:1px solid rgba(255,255,255,.08)">\n'
+            '          <span style="font-size:13.5px;color:#dfe3e8">'
+            "Show hover controls when locked</span>\n"
+            '          <span sc-camel-on-click="{{ toggleLockedHover }}"'
+            ' style="{{ lockedHoverTrack }}">'
+            '<span style="{{ lockedHoverKnob }}"></span></span>\n'
+            "        </div>",
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
                            + CLIPBOARD_PATCHES + PARITY_PATCHES
                            + CATEGORY_DRAG_PATCHES + LINK_TARGET_PATCHES
-                           + FAVICON_PATCHES):
+                           + FAVICON_PATCHES + LOCKED_HOVER_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))
@@ -906,7 +1003,8 @@ def patch_template(html: str) -> str:
         + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + ADD_BUTTON_CSS + ADD_LABEL_CSS
         + CARD_MARGIN_CSS
         + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
-        + ICON_TILE_CSS + CATEGORY_GRIP_CSS + TOUCH_CSS + "</style>"
+        + ICON_TILE_CSS + CATEGORY_GRIP_CSS + TOUCH_CSS
+        + LOCKED_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
     )
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")

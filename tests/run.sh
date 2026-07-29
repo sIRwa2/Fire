@@ -246,6 +246,26 @@ assert "e.icon === 'homepage'" in tpl, \
     "a site icon could overwrite an icon chosen in the meantime"
 print("ok    site icon fallback wired")
 
+# The lock hides the hover-revealed controls unless the setting says otherwise.
+assert 'data-locked="{{ lockedFlag }}"' in tpl, "the root carries no locked flag"
+assert "lockedFlag: (s.locked && !th.lockedHover) ? '1' : '0'," in tpl, "locked flag logic missing"
+assert "lockedHover: !!t.lockedHover" in tpl, "lockedHover is not part of theme(), so it would not persist"
+assert "Show hover controls when locked" in tpl, "the settings row is missing"
+# pointer-events matters as much as opacity: these are revealed by opacity alone,
+# so an invisible button would still be clickable.
+locked_rule = re.search(r'\[data-locked="1"\][^{]*\{([^}]*)\}', tpl).group(1)
+assert "opacity:0!important" in locked_rule and "pointer-events:none!important" in locked_rule, locked_rule
+# Each selector must carry its grid to reach (0,3,0); without that it loses to
+# EMPTY_STATE_CSS's :only-child rule and the add button stays visible when locked.
+assert '[data-locked="1"] .app-grid .add-app,' in tpl, "locked selector is too weak to win the tie"
+# ...and equal specificity is broken by order, so this rule has to come last.
+style = re.search(r"<style>(.*?)</style>", tpl, re.S).group(1)
+assert style.rstrip().endswith("pointer-events:none!important}"), \
+    "the locked rule is no longer last, so EMPTY_STATE_CSS may win the tie"
+# The header must stay usable, or the layout could not be unlocked again.
+assert ".hdr-actions" not in locked_rule, "the lock would disable its own button"
+print("ok    lock hides the hover controls, with a setting to keep them")
+
 print("ok    header lock/settings buttons flattened, locked state preserved")
 
 # The picker takes its list from the service so an update shows up without a
