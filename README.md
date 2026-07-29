@@ -36,6 +36,7 @@ node tests/render.mjs http://192.168.0.108:8080   # real WebKit + Chromium; need
 node tests/lock-state.mjs http://192.168.0.108:8080   # what the lock hides; needs playwright
 node tests/lock-persist.mjs http://192.168.0.108:8080 # that the lock survives a reload
 node tests/theme-select.mjs http://192.168.0.108:8080 # the theme dropdown
+node tests/font-sizes.mjs http://192.168.0.108:8080   # each size control in isolation
 ```
 
 `verify.sh` is non-destructive — its config write uses a scratch key and removes
@@ -107,6 +108,7 @@ options that shipped with the page, plus:
 | | |
 | --- | --- |
 | **Open links in a new tab** | On by default. Applies to both apps and bookmarks. |
+| **Font sizes** | Five controls: section headings, application name and description, bookmark category and name. Everything except the date and greeting. |
 | **Show hover controls when locked** | Off by default, so locking hides the add/edit/delete affordances. See [DOCKER.md](DOCKER.md#what-the-lock-actually-locks). |
 | *(the lock itself)* | The padlock in the header is remembered, so it survives a reload and applies on every browser. |
 | *(automatic)* | Saving an app or bookmark without picking an icon fetches the site's own, falling back to a coloured tile with its initial. See [DOCKER.md](DOCKER.md#falling-back-to-the-sites-own-icon). |

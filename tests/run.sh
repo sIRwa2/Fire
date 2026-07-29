@@ -291,6 +291,26 @@ assert "chooseTheme = (e) => {" in tpl and "if (raw === '') return;" in tpl, \
     "choosing Custom should be a no-op"
 print("ok    themes are a dropdown")
 
+# Five font sizes, covering everything but the date and greeting. They travel as
+# custom properties because the values are per-user and this stylesheet is static.
+for prop, default in (("--fs-section", "19px"), ("--fs-app-title", "14.5px"),
+                      ("--fs-app-desc", "11.2px"), ("--fs-cat-name", "15px"),
+                      ("--fs-bm-title", "14.5px")):
+    assert "var(%s,%s)!important" % (prop, default) in tpl, \
+        "no rule for %s, or its fallback drifted from the stock size" % prop
+    assert "setProperty('%s'" % prop in tpl, "%s is never published by applyTheme" % prop
+assert tpl.count('sc-camel-on-change="{{ fontSize }}"') == 5, "expected five size inputs"
+# The card's edit/delete overlay is another direct span child of the anchor, so
+# without :not([data-nodrag]) its icons get resized along with the title.
+assert ".app-grid a[data-drag-id] > span:not([data-nodrag]) > span:first-child" in tpl, \
+    "the app-title selector would also catch the edit overlay"
+# A bookmark title has no size of its own; the anchor is what carries it.
+assert ".bm-cat a[data-drag-id]{font-size:var(--fs-bm-title" in tpl, \
+    "bookmark titles are sized on the wrong element"
+assert "if (!isFinite(size) || size < 8 || size > 40) return;" in tpl, \
+    "an absurd size would be accepted"
+print("ok    five font sizes wired to custom properties")
+
 print("ok    header lock/settings buttons flattened, locked state preserved")
 
 # The picker takes its list from the service so an update shows up without a

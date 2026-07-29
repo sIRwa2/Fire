@@ -571,6 +571,42 @@ that tie and left the add button visible while locked on an empty dashboard. Equ
 specificity is then broken by source order, which is why `LOCKED_CSS` is
 concatenated last.
 
+## Font sizes
+
+Five controls under **Settings → Font sizes**, covering every piece of dashboard
+text except the date and greeting:
+
+| control | element | stock |
+| --- | --- | --- |
+| Section headings | both `h2`s — Applications and Bookmarks | 19px |
+| Application name | the card's title span | 14.5px |
+| Application description | the card's second span | 11.2px |
+| Bookmark category | a category's name | 15px |
+| Bookmark name | a bookmark link | 14.5px |
+
+The two section headings share one control deliberately: they are the same element
+at the same visual level, so splitting them would be two settings for one
+decision.
+
+Sizes live in inline styles, so the rules need `!important`. The values are
+per-user while this stylesheet is static at build time, so they travel as CSS
+custom properties that `applyTheme()` publishes on the body — the route `--accent`
+already takes. Each `var()` carries the stock size as its fallback, so the page
+still looks right if a property is ever missing.
+
+None of these elements has a class, so the selectors are structural, and two of
+them are easy to get wrong:
+
+- `.app-grid a[data-drag-id] > span:not([data-nodrag]) > span:first-child` — the
+  card's edit/delete overlay is *also* a direct span child of the anchor. Without
+  the `:not()`, its icons resize along with the title.
+- `.bm-cat a[data-drag-id]` — a bookmark title span has no size of its own and
+  inherits 14.5px from its anchor, so the anchor is what gets sized.
+
+`tests/font-sizes.mjs` sets each control in turn and asserts the intended element
+moved *and* that none of the others did, which is what catches a selector that is
+too broad.
+
 ## Themes in a dropdown
 
 The 18 built-in themes were a two-column grid of buttons — nine rows, most of the

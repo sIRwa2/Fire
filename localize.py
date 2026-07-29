@@ -1071,13 +1071,133 @@ THEME_SELECT_PATCHES = tuple(
 )
 
 
+# ── Font sizes ──────────────────────────────────────────────────────────────
+# Five sizes, covering every piece of dashboard text except the date and greeting.
+# The two section headings share one control: they are the same element (an h2 with
+# data-k) at the same visual level, so splitting them would be two settings for one
+# decision.
+#
+# Sizes live in inline styles, so the rules need !important. The values are
+# per-user, and the stylesheet is static at build time, so they travel as CSS
+# custom properties that applyTheme publishes on the body — the same route --accent
+# already takes. The var() fallbacks are the stock values, so the page still looks
+# right if a property is ever missing.
+#
+# The selectors are structural, since none of these elements carries a class:
+#   * both headings via data-k, which is stable and explicit.
+#   * the card's title and description are the two spans in its inner column. The
+#     :not([data-nodrag]) matters — the edit/delete overlay is another direct span
+#     child of the anchor, and its icons would otherwise be resized too.
+#   * a category name is the first span of the header row; the grip and delete are
+#     later siblings.
+#   * a bookmark title has no size of its own, inheriting 14.5px from its anchor,
+#     so the anchor is what gets sized.
+FONT_SIZES = (
+    ("fsSection", "--fs-section", "19px", "Section headings"),
+    ("fsAppTitle", "--fs-app-title", "14.5px", "Application name"),
+    ("fsAppDesc", "--fs-app-desc", "11.2px", "Application description"),
+    ("fsCatName", "--fs-cat-name", "15px", "Bookmark category"),
+    ("fsBmTitle", "--fs-bm-title", "14.5px", "Bookmark name"),
+)
+
+FONT_SIZE_CSS = (
+    '[data-k="appsTitle"],[data-k="bookmarksTitle"]'
+    "{font-size:var(--fs-section,19px)!important}"
+    ".app-grid a[data-drag-id] > span:not([data-nodrag]) > span:first-child"
+    "{font-size:var(--fs-app-title,14.5px)!important}"
+    ".app-grid a[data-drag-id] > span:not([data-nodrag]) > span:last-child"
+    "{font-size:var(--fs-app-desc,11.2px)!important}"
+    ".bm-cat > div:first-child > span:first-child"
+    "{font-size:var(--fs-cat-name,15px)!important}"
+    ".bm-cat a[data-drag-id]{font-size:var(--fs-bm-title,14.5px)!important}"
+)
+
+
+def _font_size_rows():
+    """One label-and-number-input row per size, in the panel's input style."""
+    out = []
+    for key, _prop, _default, label in FONT_SIZES:
+        out.append(
+            '        <div style="display:flex;align-items:center;'
+            'justify-content:space-between;gap:12px;margin-bottom:9px">\n'
+            '          <span style="font-size:13px;color:#9aa3ad">' + label + "</span>\n"
+            '          <input type="number" data-k="' + key + '" value="{{ ' + key + ' }}"'
+            ' min="8" max="40" step="0.5" sc-camel-on-change="{{ fontSize }}"'
+            ' style="width:74px;flex:none;background:rgba(255,255,255,.05);'
+            "border:1px solid rgba(255,255,255,.15);border-radius:7px;padding:6px 8px;"
+            'font-size:13px;color:#eceef1;font-family:inherit;color-scheme:dark">\n'
+            "        </div>"
+        )
+    return "\n".join(out)
+
+
+FONT_SIZE_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "font sizes on the theme",
+            "      lockedHover: !!t.lockedHover\n    };",
+            "      lockedHover: !!t.lockedHover,\n"
+            + "".join(
+                "      %s: +t.%s || %s,\n" % (key, key, default[:-2])
+                for key, _prop, default, _label in FONT_SIZES
+            ).rstrip(",\n")
+            + "\n    };",
+        ),
+        (
+            "publish the sizes as custom properties",
+            "    document.body.style.setProperty('--accent', t.accent);",
+            "    document.body.style.setProperty('--accent', t.accent);\n"
+            + "".join(
+                "    document.body.style.setProperty('%s', t.%s + 'px');\n"
+                % (prop, key)
+                for key, prop, _default, _label in FONT_SIZES
+            ).rstrip("\n"),
+        ),
+        (
+            "a handler for the size inputs",
+            "  toggleLockedHover = ()",
+            "  fontSize = (e) => {\n"
+            "    const key = e.currentTarget.dataset.k;\n"
+            "    const size = parseFloat(e.currentTarget.value);\n"
+            "    if (!isFinite(size) || size < 8 || size > 40) return;\n"
+            "    this.setTheme({ [key]: size });\n"
+            "  };\n"
+            "  toggleLockedHover = ()",
+        ),
+        (
+            "expose the sizes and the handler",
+            "      toggleLockedHover: this.toggleLockedHover,",
+            "      toggleLockedHover: this.toggleLockedHover,\n"
+            "      fontSize: this.fontSize,\n"
+            + "".join(
+                "      %s: th.%s,\n" % (key, key)
+                for key, _prop, _default, _label in FONT_SIZES
+            ).rstrip("\n"),
+        ),
+        (
+            "a font size section in the panel",
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            'text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px">Color theme</div>',
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            "text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px\">Font sizes</div>\n"
+            + _font_size_rows()
+            + "\n"
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            'text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px">Color theme</div>',
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
                            + CLIPBOARD_PATCHES + PARITY_PATCHES
                            + CATEGORY_DRAG_PATCHES + LINK_TARGET_PATCHES
                            + FAVICON_PATCHES + LOCKED_HOVER_PATCHES
-                           + LOCK_PERSIST_PATCHES + THEME_SELECT_PATCHES):
+                           + LOCK_PERSIST_PATCHES + THEME_SELECT_PATCHES
+                           + FONT_SIZE_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))
@@ -1115,7 +1235,7 @@ def patch_template(html: str) -> str:
         + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + ADD_BUTTON_CSS + ADD_LABEL_CSS
         + CARD_MARGIN_CSS
         + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
-        + ICON_TILE_CSS + CATEGORY_GRIP_CSS + TOUCH_CSS
+        + ICON_TILE_CSS + CATEGORY_GRIP_CSS + FONT_SIZE_CSS + TOUCH_CSS
         + LOCKED_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
     )
