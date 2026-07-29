@@ -86,11 +86,39 @@ try:
     check("stored world-readable for nginx",
           os.stat(os.path.join(store.dir, name)).st_mode & 0o044 != 0)
 
-    # A site with no usable image must not leave anything behind.
+    # A site with no usable image gets a generated initial tile — the last resort,
+    # so a lookup never comes back empty. synthtopia.com is the real case:
+    # declares nothing, empty /favicon.ico, 404s the conventional paths.
     empty = favicon_mod.FaviconStore(os.path.join(work, "fav2"), log=lambda m: None)
     empty._get = lambda url, limit, truncate=False: (url, b"<!DOCTYPE html><html></html>")
-    name2, _ = empty.fetch("http://nothing.test/")
-    check("no icon found means nothing stored", name2 is None, name2)
+    name2, src2 = empty.fetch("http://nothing.test/")
+    check("no icon found falls back to a tile", name2 and name2.endswith(".svg"), name2)
+    check("the tile reports no source url", src2 is None, src2)
+    tile = open(os.path.join(empty.dir, name2), "rb").read()
+    check("the tile is a real svg", favicon_mod._sniff(tile) == ".svg")
+    check("the tile has rounded corners", b'rx="' in tile, tile[:120])
+    check("the tile carries the initial", b">N</text>" in tile, tile[-90:])
+
+    # Stable per host, or it would change on every re-fetch.
+    a1 = favicon_mod.letter_tile("synthtopia.com")
+    a2 = favicon_mod.letter_tile("www.synthtopia.com")
+    check("the tile is deterministic", a1 == favicon_mod.letter_tile("synthtopia.com"))
+    check("www is stripped before hashing", a1 == a2)
+    check("different hosts differ",
+          favicon_mod.letter_tile("plex.lan") != favicon_mod.letter_tile("proxmox.lan"))
+    check("a leading digit is used as-is", b">9</text>" in favicon_mod.letter_tile("9anime.to"))
+    check("an unusable name falls back to ?", b">?</text>" in favicon_mod.letter_tile("--"))
+    check("every colour is from the palette",
+          all(any(c.encode() in favicon_mod.letter_tile(h) for c in favicon_mod.TILE_COLOURS)
+              for h in ("a.test", "b.test", "c.test", "zz.test")))
+
+    # An unreachable site still gets a tile rather than nothing.
+    down = favicon_mod.FaviconStore(os.path.join(work, "fav5"), log=lambda m: None)
+    def refuse(url, limit, truncate=False):
+        raise OSError("host is down")
+    down._get = refuse
+    name5, _ = down.fetch("http://offline.test/")
+    check("an unreachable site still gets a tile", name5 and name5.endswith(".svg"), name5)
 
     # Re-fetching the same site replaces rather than accumulates.
     store._get = stub

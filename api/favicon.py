@@ -54,6 +54,17 @@ SIGNATURES = (
     (b"RIFF", ".webp"),          # confirmed against WEBP below
 )
 
+# Deterministic per host rather than actually random: the same site must get the
+# same tile every time, or it would change on every re-fetch. Mid-tones chosen to
+# stay legible under white text and to sit alongside the dashboard's palette.
+TILE_COLOURS = (
+    "#c2564f", "#c77b3c", "#b3963a", "#78a04a", "#4f9d72",
+    "#4a94a8", "#4f7fb8", "#6a6fc0", "#8d61b5", "#b45a95",
+    "#a2603f", "#5b8f5b", "#41827f", "#8a7a3e", "#9a5670",
+)
+TILE_SIZE = 64
+TILE_RADIUS = 14
+
 REL_SCORES = {
     "apple-touch-icon": 700,
     "apple-touch-icon-precomposed": 690,
@@ -74,6 +85,41 @@ def _sniff(data):
     if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in data[:2000]):
         return ".svg"
     return None
+
+
+def letter_tile(host):
+    """A rounded square with the site's initial, for sites that have no icon.
+
+    The last resort, so it never fails: some sites declare no icon, serve an empty
+    /favicon.ico and 404 the conventional paths — synthtopia.com does all three.
+    An SVG because it costs a few hundred bytes, scales to any size the page asks
+    for, and needs no image library.
+    """
+    name = re.sub(r"^www\d*\.", "", (host or "").lower())
+    letter = next((c for c in name if c.isalnum()), "?").upper()
+    # Hashed so the colour is stable for a host but varied across a dashboard.
+    digest = hashlib.sha1(name.encode()).digest()
+    bg = TILE_COLOURS[digest[0] % len(TILE_COLOURS)]
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %(s)d %(s)d" '
+        'width="%(s)d" height="%(s)d">'
+        '<rect width="%(s)d" height="%(s)d" rx="%(r)d" ry="%(r)d" fill="%(bg)s"/>'
+        # Baseline placed by hand rather than with dominant-baseline, which older
+        # WebKit does not honour when an SVG is rendered as an image.
+        '<text x="%(mid)s" y="%(base)s" text-anchor="middle" fill="#ffffff" '
+        'font-family="system-ui,-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif" '
+        'font-size="%(fs)s" font-weight="700">%(letter)s</text>'
+        "</svg>"
+    ) % {
+        "s": TILE_SIZE,
+        "r": TILE_RADIUS,
+        "mid": TILE_SIZE / 2,
+        "base": TILE_SIZE * 0.705,
+        "fs": TILE_SIZE * 0.5,
+        "bg": bg,
+        "letter": letter if letter.isalnum() else "?",
+    }
+    return svg.encode("utf-8")
 
 
 class LinkIcons(HTMLParser):
@@ -204,7 +250,23 @@ class FaviconStore:
                         pass
             self.log("favicon: %s -> %s (%d bytes)" % (parts.netloc, name, len(data)))
             return name, candidate
-        return None, None
+
+        # Nothing usable anywhere: fall back to a generated initial tile so an
+        # entry always ends up with something of its own rather than the shared
+        # generic glyph.
+        stem = hashlib.sha1(
+            ("%s://%s" % (parts.scheme, parts.netloc)).encode()
+        ).hexdigest()[:16]
+        name = stem + ".svg"
+        self._write(name, letter_tile(parts.hostname or parts.netloc))
+        for other in os.listdir(self.dir):
+            if other.startswith(stem) and other != name:
+                try:
+                    os.unlink(os.path.join(self.dir, other))
+                except OSError:
+                    pass
+        self.log("favicon: %s -> %s (generated tile)" % (parts.netloc, name))
+        return name, None
 
     def _write(self, name, data):
         os.makedirs(self.dir, exist_ok=True)

@@ -464,11 +464,22 @@ host in your dashboard who is looking at it. Fetching once through the api and
 serving from our own origin keeps the CSP unchanged, and means the icon still
 renders when the target is down.
 
-**Some sites simply have no icon**, and that is not a failure to fix. Anything
-that declares nothing, serves an empty `/favicon.ico`, and 404s the conventional
-paths — synthtopia.com does all three — keeps the `homepage` placeholder. The
-sniffer refuses to store their 404 page, which is a 47 KB lump of HTML, as an
-"icon".
+**Some sites simply have no icon.** Anything that declares nothing, serves an
+empty `/favicon.ico`, and 404s the conventional paths — synthtopia.com does all
+three — gets a generated tile instead: a rounded square in a colour derived from
+the hostname, with the site's initial. So a lookup never comes back empty, and an
+entry always ends up with something of its own rather than the shared generic
+glyph. An unreachable host gets one too.
+
+The colour is hashed from the hostname rather than actually random, so a site
+keeps the same tile across re-fetches, and `www.` is stripped first so
+`www.example.com` and `example.com` agree. It is an SVG — a few hundred bytes,
+scales to whatever size the page asks for, and needs no image library. The
+baseline is placed by hand rather than with `dominant-baseline`, which older
+WebKit ignores when an SVG is rendered as an image.
+
+The sniffer still refuses to store a 404 page as an icon — synthtopia's is a 47 KB
+lump of HTML — which is what makes the tile the fallback rather than that.
 
 **"Or better" is the interesting half.** `/favicon.ico` is usually 16px, so the
 page's own `<link rel>` tags are read first and scored — `apple-touch-icon`

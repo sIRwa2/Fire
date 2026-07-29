@@ -104,7 +104,7 @@ options that shipped with the page, plus:
 | | |
 | --- | --- |
 | **Open links in a new tab** | On by default. Applies to both apps and bookmarks. |
-| *(automatic)* | Saving an app or bookmark without picking an icon fetches the site's own. See [DOCKER.md](DOCKER.md#falling-back-to-the-sites-own-icon). |
+| *(automatic)* | Saving an app or bookmark without picking an icon fetches the site's own, falling back to a coloured tile with its initial. See [DOCKER.md](DOCKER.md#falling-back-to-the-sites-own-icon). |
 | **Icons — Check for updates** | Pulls new icons from upstream. See [DOCKER.md](DOCKER.md#icon-updates). |
 
 Both are stored server-side with the rest of your config, so they follow you to
