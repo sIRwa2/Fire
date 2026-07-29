@@ -646,17 +646,25 @@ Worth knowing:
 
 ## Favicon
 
-`tools/make-favicon.py` generates `favicon.svg`, `favicon.png`,
-`apple-touch-icon.png` and `favicon.ico` from one set of path data, so the
-vector and the rasters can't drift. Stdlib only — it flattens the beziers and
-rasterizes them itself, no Pillow or cairo needed.
+`favicon.svg` is the source of truth and is what modern browsers actually use.
+`tools/make-favicon.mjs` rasterises the fallbacks from it — `favicon.png` (32),
+`apple-touch-icon.png` (180) and `favicon.ico` (16/32/48) for clients that probe
+`/favicon.ico` blindly:
 
 ```sh
-python3 tools/make-favicon.py   # after editing the design constants
+node tools/make-favicon.mjs      # after replacing favicon.svg
 ```
 
-Colours and geometry are constants at the top of that file. The outputs are
-committed, so the Docker build doesn't run the generator.
+All four are committed, so the Docker build never runs it. To change the icon,
+replace `favicon.svg` and re-run.
+
+It renders with a headless browser, which is already a dev dependency for
+`tests/render.mjs`. That replaced a hand-rolled stdlib rasteriser, and the reason
+is worth recording: that one drew geometry defined in its own source, where
+even-odd filling was safe because it controlled the shapes. The artwork is now an
+SVG with inner subpaths for the windows, and SVG's default fill rule is *nonzero*
+— getting that subtly wrong would have silently filled the holes rather than
+failing. A browser is the reference implementation.
 
 `localize.py` injects the `<link>` tags and a `<title>`, neither of which the
 exported template carries — without them the tab shows a blank icon and the
