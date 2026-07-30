@@ -639,6 +639,47 @@ URL_TITLE_PATCHES = tuple(
 )
 
 
+# ── Enter commits the add/edit dialog ───────────────────────────────────────
+# Paste a URL, get a Title guessed from it, and the dialog is already complete —
+# so reaching for the mouse to press Add is the only thing left, and Enter should
+# do it. The page already treats Enter that way for the new-category input
+# (newGroupKey), so this is the same idea in the one dialog that lacked it.
+#
+# Hung off the existing window keydown handler rather than the inputs: the dialog
+# has four fields plus an icon search, and Enter should work from all of them
+# without five identical handlers. That handler already owns Escape for the same
+# reason.
+#
+# Three guards, in order of how easy each is to get wrong:
+#
+#   * this.state.modal — without it, Enter anywhere on the page (or in the
+#     settings panel) would try to save.
+#   * not on a button — Enter on a focused Cancel fires that button's own click,
+#     and saving as well would override the cancel.
+#   * isComposing — Enter also confirms an IME candidate, which is not a submit.
+#
+# saveModal needs no extra validation: its own guard is character for character
+# what saveDisabled uses for the button, so Enter cannot save what Add refuses.
+ENTER_SAVE_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "Enter saves the add/edit dialog",
+            "    this._onKey = (e) => { if (e.key === 'Escape')"
+            " this.setState({ modal: null, themeOpen: false, ctx: null }); };",
+            """    this._onKey = (e) => {
+      if (e.key === 'Escape') this.setState({ modal: null, themeOpen: false, ctx: null });
+      if (e.key === 'Enter' && this.state.modal && !e.isComposing
+          && !(e.target && e.target.closest && e.target.closest('button'))) {
+        e.preventDefault();
+        this.saveModal();
+      }
+    };""",
+        ),
+    )
+)
+
+
 # ── Bookmarks and apps as the same kind of thing ────────────────────────────
 # Items drag between the two lists, and the drop handler already treats them as
 # one shape: moving a bookmark into apps synthesises a desc from the URL host,
@@ -1520,7 +1561,7 @@ def apply_js_patches(body: str) -> str:
                            + FONT_SIZE_PATCHES + MOBILE_PATCHES
                            # Last: its anchors are what JS_PATCHES and
                            # CLIPBOARD_PATCHES leave behind.
-                           + URL_TITLE_PATCHES):
+                           + URL_TITLE_PATCHES + ENTER_SAVE_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))

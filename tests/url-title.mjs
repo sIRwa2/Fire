@@ -119,7 +119,74 @@ check('the bookmark saved with the guessed title',
   doc.v1.groups[0].bookmarks.length === 1 && doc.v1.groups[0].bookmarks[0].title === 'Plex',
   JSON.stringify(doc.v1.groups[0].bookmarks));
 
-// 7. Editing an existing entry must not have its title rewritten under it.
+// 7. Enter commits the dialog — the point of the paste flow: paste, Enter, done.
+await openAdd();
+await page.locator(`${DIALOG} input[data-field="url"]`).fill('http://grafana.lan');
+await page.waitForTimeout(350);
+check('the pasted URL guessed a title before Enter',
+  (await fields()).title === 'Grafana', JSON.stringify(await fields()));
+await page.keyboard.press('Enter');
+await page.waitForTimeout(700);
+check('Enter saved the entry',
+  doc.v1.apps.length === 3 && doc.v1.apps[2].title === 'Grafana',
+  JSON.stringify(doc.v1.apps.map(a => a.title)));
+check('Enter closed the dialog', await page.locator(DIALOG).count() === 0,
+  await page.locator(DIALOG).count());
+
+// Enter must do nothing while the dialog is incomplete — the same condition that
+// disables the Add button.
+await openAdd();
+await page.click(`${DIALOG} input[data-field="title"]`);
+await page.keyboard.type('No URL yet', { delay: 15 });
+await page.keyboard.press('Enter');
+await page.waitForTimeout(500);
+check('Enter does not save without a URL', doc.v1.apps.length === 3,
+  JSON.stringify(doc.v1.apps.map(a => a.title)));
+check('the dialog stays open', await page.locator(DIALOG).count() === 1,
+  await page.locator(DIALOG).count());
+
+// Enter from the icon search field commits too — all four fields plus the search.
+await page.click(`${DIALOG} input[data-field="url"]`);
+await page.keyboard.type('http://nginx.lan', { delay: 15 });
+await page.click(`${DIALOG} input[data-field="q"]`);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(700);
+check('Enter works from the icon search field too',
+  doc.v1.apps.length === 4 && doc.v1.apps[3].title === 'No URL yet',
+  JSON.stringify(doc.v1.apps.map(a => a.title)));
+
+// Enter on a focused Cancel must cancel, not save.
+await openAdd();
+await page.locator(`${DIALOG} input[data-field="url"]`).fill('http://should-not-save.lan');
+await page.waitForTimeout(300);
+await page.locator(`${DIALOG} button`, { hasText: 'Cancel' }).first().focus();
+await page.keyboard.press('Enter');
+await page.waitForTimeout(700);
+check('Enter on Cancel does not save', doc.v1.apps.length === 4,
+  JSON.stringify(doc.v1.apps.map(a => a.title)));
+check('Enter on Cancel closed the dialog', await page.locator(DIALOG).count() === 0,
+  await page.locator(DIALOG).count());
+
+// With no dialog open, Enter must not even be swallowed: preventDefault on every
+// Enter would break activating a focused app link from the keyboard.
+check('Enter is left alone when no dialog is open', await page.evaluate(() => {
+  const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+  document.body.dispatchEvent(ev);
+  return !ev.defaultPrevented;
+}), 'preventDefault fired with no modal open');
+
+// And it stays inert outside the dialog: the settings panel has its own fields.
+await page.hover('.hdr-row');
+await page.waitForTimeout(200);
+await page.click('.hdr-actions button[title="Settings"]');
+await page.waitForTimeout(500);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(400);
+check('Enter in the settings panel saves nothing', doc.v1.apps.length === 4,
+  JSON.stringify(doc.v1.apps.map(a => a.title)));
+await closeDialog();
+
+// 8. Editing an existing entry must not have its title rewritten under it.
 await page.hover('.app-grid a[data-drag-id]');
 await page.waitForTimeout(250);
 await page.locator('.app-grid a[data-drag-id] span[data-nodrag] span').first().click();

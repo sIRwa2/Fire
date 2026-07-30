@@ -411,6 +411,19 @@ assert "if (f === 'url' && (!m.title.trim() || m.titleAuto)) {" in tpl, \
 # Without the host-shaped gate, typing a URL dribbles G, Gi, Git into the field.
 assert "/^[a-z]+:\\/\\//i.test(raw) || /[.:]/.test(raw)" in tpl, \
     "the URL guess would fire on every keystroke"
+# Enter commits the dialog, off the same window handler that owns Escape. Both
+# guards are load-bearing: without the modal check, Enter is swallowed page-wide
+# and a focused app link can no longer be activated from the keyboard; without the
+# button check, Enter on a focused Cancel saves instead of cancelling.
+assert "if (e.key === 'Enter' && this.state.modal && !e.isComposing" in tpl, \
+    "Enter does not commit the dialog, or is not gated on a modal being open"
+assert "!(e.target && e.target.closest && e.target.closest('button'))" in tpl, \
+    "Enter on a focused Cancel button would save instead of cancelling"
+# Enter must not be able to save what the Add button refuses, so the two
+# conditions have to stay identical.
+assert "saveDisabled = !m || !m.title.trim() || !m.url.trim();" in tpl and \
+    "if (!m || !m.title.trim() || !m.url.trim()) return;" in tpl, \
+    "saveModal's guard and saveDisabled have drifted apart"
 # The baked list must survive as the fallback for when the service is unreachable.
 assert 'id="__icons_data"' in tpl, "baked icon list is gone; nothing to fall back to"
 print("ok    icon list served from the api, update button wired")
