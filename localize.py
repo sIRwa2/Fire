@@ -156,21 +156,39 @@ ADD_LABEL_CSS = (
     ".bm-cat > button > span:first-child{color:var(--accent)!important}"
 )
 
-# Bottom margin under the app cards.
+# Padding and spacing for the app cards.
 #
-# They sit closer together than they look: the inline style declares
-# padding:12px 14px and then overrides all four sides with padding-*:0px, so a
-# card is flush and the only vertical separation is the grid's 14px row gap
-# against a 24px column gap. 14px of margin brings the vertical rhythm (14 + 14)
-# in line with the horizontal one.
+# The cards are flush: the inline style declares padding:12px 14px and then
+# overrides all four sides with padding-*:0px in the same attribute, so the
+# longhands win and the hover highlight — style-hover="background:
+# rgba(255,255,255,.045)", an 8px-radius plate — is painted tight against the
+# icon and the text with no room around it.
+#
+# So give the highlight room, and take the space back out of the margin so the
+# rows do not spread: this grows the plate from 34px to 52px tall while the row
+# pitch only goes from 62px to 66px. The 14px bottom margin that used to do the
+# separating is no longer needed — the padding does it, and doubling up would
+# push the pitch to 80px.
+#
+# The horizontal padding is cancelled by an equal negative margin. Without that,
+# every icon and title shifts right by CARD_PADDING's 12px and stops lining up
+# with the section heading and the bookmark rows below; with it the content stays
+# exactly where it is and only the highlight grows outwards. The bleed is half
+# the grid's 24px column gap, so neighbouring cards end up touching rather than
+# overlapping — and .page-wrap's own padding absorbs it at both edges, on a phone
+# too, so nothing escapes the wrapper.
 #
 # Applied to the add button as well as the cards. Grid items stretch to the row
 # height by default, so giving only the cards a margin would leave the button's
 # hover area taller than theirs in a shared row.
-CARD_BOTTOM_MARGIN = "14px"
+CARD_PADDING = "9px 12px"
+CARD_SIDE_BLEED = "12px"
 CARD_MARGIN_CSS = (
     ".app-grid > a[data-drag-id],.app-grid > .add-app"
-    "{margin-bottom:" + CARD_BOTTOM_MARGIN + "!important}"
+    "{padding:" + CARD_PADDING + "!important;"
+    "margin-bottom:0!important;"
+    "margin-left:-" + CARD_SIDE_BLEED + "!important;"
+    "margin-right:-" + CARD_SIDE_BLEED + "!important}"
 )
 
 # The header's lock and settings buttons. .hdr-actions holds exactly those two —

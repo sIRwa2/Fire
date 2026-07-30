@@ -40,6 +40,7 @@ node tests/font-sizes.mjs http://192.168.0.108:8080   # each size control in iso
 node tests/theme-persist.mjs http://192.168.0.108:8080 # theme + colour pickers persist
 node tests/mobile.mjs http://192.168.0.108:8080       # the three mobile layouts
 node tests/header-swipe.mjs http://192.168.0.108:8080 # swipe-to-reveal on a phone
+node tests/cards.mjs http://192.168.0.108:8080        # app card padding + alignment
 ```
 
 `verify.sh` is non-destructive — its config write uses a scratch key and removes

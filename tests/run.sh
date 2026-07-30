@@ -218,9 +218,22 @@ assert tpl.rindex('{{ editable }}', 0, grip_at) > tpl.rindex('</sc-if>', 0, grip
     "the drag grip is outside the editable block"
 print("ok    categories drag-sortable, drag typed by kind")
 
-assert ".app-grid > a[data-drag-id],.app-grid > .add-app{margin-bottom:14px!important}" in tpl, \
-    "card bottom margin missing"
-print("ok    app cards have a bottom margin")
+# The cards are padded so the hover highlight has room, with the horizontal
+# padding cancelled by an equal negative margin so the content does not shift.
+card = re.search(r"\.app-grid > a\[data-drag-id\],\.app-grid > \.add-app\{([^}]*)\}", tpl)
+assert card, "the app card rule is missing"
+decls = dict(d.split(":", 1) for d in card.group(1).replace("!important", "").split(";") if d)
+assert decls.get("padding") == "9px 12px", "card padding missing: %s" % decls
+# Equal and opposite, or every icon and title drifts right of the section heading.
+pad_x = decls["padding"].split()[1]
+assert decls.get("margin-left") == "-" + pad_x and decls.get("margin-right") == "-" + pad_x, \
+    "the side bleed does not cancel the horizontal padding: %s" % decls
+# The bleed is half the grid's 24px column gap, so neighbours touch but never
+# overlap; any more and their hit areas would collide.
+assert int(pad_x.rstrip("px")) * 2 <= 24, "the side bleed would overlap the next card"
+assert decls.get("margin-bottom") == "0", \
+    "a bottom margin on top of the padding would push the row pitch to 80px"
+print("ok    app cards padded, bleed cancels the shift")
 
 # The link target moves from an authoring prop to a persisted user setting. The
 # ?? matters: once chosen, sameTab:false must not fall back to the prop default.

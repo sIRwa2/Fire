@@ -250,6 +250,40 @@ and the wrapper has `padding-top: 50px`, which is what stops that margin
 collapsing through the parent — so the header lands 100px from the top. Since
 the header is in normal flow, the content below moves down with it.
 
+## Card padding
+
+The app cards were flush, so their hover highlight was painted tight against the
+icon and the text. The padding is in the card's own inline style and then undone
+in the same attribute — the longhands win, so the shorthand never applies:
+
+```
+style="… padding: 12px 14px; …; padding-left: 0px; padding-right: 0px;
+       padding-top: 0px; padding-bottom: 0px"
+```
+
+`CARD_MARGIN_CSS` puts it back at `9px 12px`, which grows the highlight — a
+`rgba(255,255,255,.045)` plate at 8px radius — from 172×34 to 196×52. The 14px
+bottom margin that used to do the separating is gone: the padding does it now, and
+keeping both would push the row pitch from 62px to 80px. As it stands the pitch
+goes to 66px, so the rows barely move while each highlight gains 18px of height.
+
+The horizontal padding is cancelled by an equal negative margin
+(`CARD_SIDE_BLEED`). Without it every icon and title shifts 12px right and stops
+lining up with the section heading and the bookmark rows below; with it the
+content stays exactly where it was and only the highlight grows outwards. Two
+constraints keep that safe, both asserted in `tests/run.sh`:
+
+- The bleed is **half** the grid's 24px column gap, so neighbouring cards end up
+  touching rather than overlapping — more would collide their hit areas.
+- `.page-wrap`'s own padding absorbs it at both edges, including on a phone where
+  the wrapper goes to `width: 100%`. `tests/cards.mjs` checks that in all three
+  mobile layouts.
+
+The add button gets the same rule, since grid items stretch to the row height and
+a difference would leave one hover area taller than the other. Its own
+`min-height: 60px` and border-box sizing mean the padding sits inside it rather
+than adding to it, so it stays 60px.
+
 ## Touch devices
 
 Every control for editing the dashboard is hover-revealed — four `:hover` rules
