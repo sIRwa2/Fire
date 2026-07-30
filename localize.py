@@ -91,6 +91,52 @@ PAGE_WRAP_CSS = (
 # leave a gap where it used to be.
 HEADER_CSS = ".page-wrap > header{margin-top:50px!important}"
 
+# ── Search the web from the top of the page ─────────────────────────────────
+# A plain <form> with a GET action, so submitting is the browser's own
+# navigation: no JS, and it still works with scripting off.
+#
+# type="search" rather than type="text" is the point of using the native
+# control — it brings the clear (×) button, the search keyboard on mobile, and
+# Escape-to-clear, none of which would be worth reimplementing.
+#
+# The engine is hardcoded. A page cannot read the browser's configured default
+# search engine — there is no API for it, deliberately, since it would be a
+# fingerprinting vector — so "native" can only mean the native input control,
+# not the native engine. DuckDuckGo is the default here because it needs no
+# account and honours the ?q= form without a referrer.
+SEARCH_ACTION = "https://duckduckgo.com/"
+
+# The × for the native clear button, as a mask so the colour comes from the rule
+# above and can differ on hover. Inline rather than a custom property: --accent
+# is published on document.body at runtime by applyTheme, and there is no static
+# :root block here to hang another one on.
+CLEAR_X = (
+    "url('data:image/svg+xml;utf8,"
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+    'fill="none" stroke="black" stroke-width="3" stroke-linecap="round">'
+    '<path d="M5 5l14 14M19 5L5 19"/></svg>\')'
+)
+SEARCH_CSS = (
+    ".hdr-search{margin:0 0 22px}"
+    # Full width of the wrapper, so it reads as a bar rather than a stray field.
+    ".hdr-search input{width:100%;box-sizing:border-box;padding:11px 14px;"
+    "border-radius:9px;border:1px solid rgba(255,255,255,.1);"
+    "background:rgba(255,255,255,.04);color:#f2f4f6;font-family:inherit;"
+    "font-size:14px;outline:none;transition:border-color .18s ease,"
+    "background .18s ease}"
+    ".hdr-search input::placeholder{color:#7f8792}"
+    ".hdr-search input:focus{border-color:var(--accent);"
+    "background:rgba(255,255,255,.07)}"
+    # WebKit hides the native clear button until it is styled back in, and its
+    # default is a dark glyph that vanishes against this background.
+    ".hdr-search input::-webkit-search-cancel-button{-webkit-appearance:none;"
+    "appearance:none;width:14px;height:14px;cursor:pointer;"
+    "background:currentColor;color:#7f8792;"
+    "-webkit-mask:" + CLEAR_X + " center/14px no-repeat;"
+    "mask:" + CLEAR_X + " center/14px no-repeat}"
+    ".hdr-search input::-webkit-search-cancel-button:hover{color:#f2f4f6}"
+)
+
 # The bundle ships a demo dashboard: 12 apps pointing at *.example.com and 4
 # bookmark groups of public sites. Emptying the defaults is what makes a clean
 # slate actually clean — wiping the stored config only falls back to these, and
@@ -774,6 +820,37 @@ CAT_DELETE_PATCHES = tuple(
             "centre the bin in what the label used to occupy",
             "padding:2px 7px 2px 5px;border-radius:5px;font-size:10px",
             "padding:3px 5px;border-radius:5px;font-size:10px",
+        ),
+    )
+)
+
+
+# ── A search bar above the date ─────────────────────────────────────────────
+# Sits inside the header's accent-topped block, above the date line, so the
+# whole top of the page stays one unit.
+#
+# No component state and no handler: the form's own GET submit navigates, which
+# is why this needs nothing from renderVals(). name="q" is what the action
+# expects, and autocomplete="off" keeps the browser's form history out of the
+# way of the engine's own suggestions.
+#
+# The template is compiled, so {{ }} would be read as a placeholder and a
+# sc-camel-* attribute as a binding; this is deliberately plain HTML with
+# neither.
+SEARCH_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "search bar above the date",
+            '<div style="font-size:13px;letter-spacing:1px;'
+            'text-transform:uppercase;color:#b7bdc4">',
+            '<form class="hdr-search" action="' + SEARCH_ACTION + '" '
+            'method="get" role="search">'
+            '<input type="search" name="q" autocomplete="off" '
+            'aria-label="Search the web" placeholder="Search the web…">'
+            "</form>"
+            '<div style="font-size:13px;letter-spacing:1px;'
+            'text-transform:uppercase;color:#b7bdc4">',
         ),
     )
 )
@@ -1702,7 +1779,7 @@ def apply_js_patches(body: str) -> str:
                            # Last: its anchors are what JS_PATCHES and
                            # CLIPBOARD_PATCHES leave behind.
                            + URL_TITLE_PATCHES + ENTER_SAVE_PATCHES
-                           + CAT_DELETE_PATCHES):
+                           + CAT_DELETE_PATCHES + SEARCH_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))
@@ -1738,7 +1815,8 @@ def patch_template(html: str) -> str:
     swipe = open(SWIPE_PATH, encoding="utf-8").read()
     tag = (
         HEAD_MARKUP
-        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + ADD_BUTTON_CSS + ADD_LABEL_CSS
+        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + SEARCH_CSS
+        + ADD_BUTTON_CSS + ADD_LABEL_CSS
         + CARD_MARGIN_CSS
         + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
         + ICON_TILE_CSS + CATEGORY_GRIP_CSS + FONT_SIZE_CSS + TOUCH_CSS
@@ -1784,6 +1862,12 @@ def patch_template(html: str) -> str:
 
     body = empty_defaults(body)
     body = apply_js_patches(body)
+
+    # SEARCH_CSS is all .hdr-search descendants, so a form that failed to land
+    # would leave an unstyled input sitting above the date. Checked after the
+    # patches, since SEARCH_PATCHES is what inserts it.
+    if 'class=\\"hdr-search\\"' not in body:
+        raise ValueError("no hdr-search form; SEARCH_CSS would be inert")
 
     n = body.count(URL_HINT_OLD)
     if n != 1:

@@ -150,6 +150,26 @@ assert tpl.index("<header") > tpl.index('class="page-wrap"'), "header left page-
 assert re.search(r"padding:\s*\d+px", wrap), "page-wrap lost its padding; header margin would collapse"
 print("ok    header offset wired up")
 
+# The search form submits by itself, so the parts that make that work — the GET
+# action, name="q" and type="search" — are the whole feature. type="text" would
+# still submit but drop the native clear button, which is the point of it.
+search = re.search(r'<form class="hdr-search"[^>]*>(.*?)</form>', tpl, re.S)
+assert search, "search form is gone"
+form = re.search(r'<form class="hdr-search"([^>]*)>', tpl).group(1)
+assert 'action="https://duckduckgo.com/"' in form, "search form lost its action"
+assert 'method="get"' in form, "search form is no longer a GET; the query would be dropped"
+assert 'type="search"' in search.group(1), "search input is no longer type=search"
+assert 'name="q"' in search.group(1), "search input lost name=q; the engine gets no query"
+assert 'aria-label=' in search.group(1), "search input has no accessible name"
+# It has to sit inside the header, above the date, or SEARCH_CSS's margin and
+# the placement the header was built around are both wrong.
+assert tpl.index('class="hdr-search"') > tpl.index("<header"), "search bar left the header"
+assert tpl.index('class="hdr-search"') < tpl.index("{{ dateStr }}"), "search bar is not above the date"
+assert ".hdr-search input{" in tpl, "search bar CSS missing"
+assert ".hdr-search input::-webkit-search-cancel-button{" in tpl, \
+    "the native clear button is unstyled; WebKit hides it by default"
+print("ok    search bar above the date, native clear button styled")
+
 # A clean slate has to be genuinely empty: wiping stored config falls back to
 # these defaults, and componentDidMount persists them again on the next load.
 for name in ("defaultApps", "defaultGroups"):

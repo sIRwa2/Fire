@@ -117,6 +117,24 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
         wrapMargin: parseFloat(cs('.page-wrap', 'marginLeft')),
         boxSizing: cs('.page-wrap', 'boxSizing'),
         headerMargin: cs('.page-wrap > header', 'marginTop'),
+        searchWidth: (() => {
+          const i = document.querySelector('.hdr-search input');
+          return i && i.getBoundingClientRect().width;
+        })(),
+        searchType: document.querySelector('.hdr-search input')?.type,
+        // The date line is the neighbour the bar is meant to align with, so it
+        // is the honest width to compare against — .page-wrap has 250px of
+        // horizontal padding, so wrapWidth would never match.
+        dateWidth: document.querySelector('.hdr-search')
+          ?.nextElementSibling?.getBoundingClientRect().width,
+        // Above the date, and inside the header — the two things the placement
+        // depends on, measured rather than assumed from source order.
+        searchAboveDate: (() => {
+          const i = document.querySelector('.hdr-search');
+          const d = i && i.nextElementSibling;
+          return !!(i && d && i.getBoundingClientRect().bottom <= d.getBoundingClientRect().top);
+        })(),
+        searchInHeader: !!document.querySelector('.page-wrap > header .hdr-search'),
         addBorder: cs('.add-app', 'borderTopColor'),
         addOutline: cs('.add-app', 'outlineStyle'),
         plusBg: plus && getComputedStyle(plus).backgroundColor,
@@ -141,6 +159,16 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     check(`${label}: margin is 5% of the viewport`, Math.abs(s.wrapMargin - 1504 * 0.05) < 2,
       s.wrapMargin);
     check(`${label}: header dropped 50px`, s.headerMargin === '50px', s.headerMargin);
+    // type is read off the live element: a browser that does not know
+    // type="search" reflects "text", which is exactly the case where the
+    // native clear button is missing and the styling above is inert.
+    check(`${label}: search input is a native search field`, s.searchType === 'search',
+      s.searchType);
+    check(`${label}: search bar sits in the header`, s.searchInHeader);
+    check(`${label}: search bar is above the date`, s.searchAboveDate);
+    check(`${label}: search bar spans the content column`,
+      s.searchWidth && s.dateWidth && Math.abs(s.searchWidth - s.dateWidth) < 2,
+      `${s.searchWidth} vs ${s.dateWidth}`);
     check(`${label}: add button has no border`, transparent(s.addBorder), s.addBorder);
     check(`${label}: add button has no focus ring at rest`, s.addOutline === 'none', s.addOutline);
     check(`${label}: + glyph has no background`, transparent(s.plusBg), s.plusBg);
