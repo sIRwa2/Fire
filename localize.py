@@ -121,22 +121,19 @@ SEARCH_CSS = (
     # bar is showing, so revealing it cannot move the date or the greeting. That
     # is the whole reason this is not a collapse.
     ".hdr-search{margin:0 0 14px;opacity:0;transition:opacity .18s ease}"
-    # Revealed from the whole header block rather than the strip itself, so the
-    # bar is reachable by aiming at the date or the greeting. .page-wrap is the
-    # common ancestor: the form is a sibling of <header>, so a
-    # `header:hover ~ .hdr-search` would only ever match hovering the header,
-    # and hovering the bar itself would hide it again mid-type.
-    ".page-wrap:has(> header:hover) .hdr-search,"
+    # Revealed only by its own strip. Hovering the header block below (the date
+    # and the greeting) used to reveal it too, via
+    # .page-wrap:has(> header:hover) — but that is a second, disjoint trigger
+    # zone 50px further down the page, so the bar appeared when the pointer was
+    # nowhere near it. The strip is the one area adjacent to the bar, and it
+    # occupies the bar's full reserved height, so it is a 40px-tall target
+    # spanning the content column rather than a thin line.
     ".hdr-search:hover{opacity:1}"
     # Kept up while the field has focus, or typing would blur it away the moment
-    # the pointer left. Its own rule, not appended to the list above: a selector
+    # the pointer left. Its own rule, not appended to the one above: a selector
     # list is dropped whole if any part fails to parse, and :focus-within is the
     # newer of the two.
     ".hdr-search:focus-within{opacity:1}"
-    # :has() is Safari 15.4+/Chrome 105+. Without it the two rules above are
-    # dropped and only the bar's own :hover survives, which is a strip you
-    # cannot find. Fall back to always-visible rather than unreachable.
-    "@supports not selector(:has(*)){.hdr-search{opacity:1}}"
     # Full width of the wrapper, so it reads as a bar rather than a stray field.
     ".hdr-search input{width:100%;box-sizing:border-box;padding:11px 14px;"
     "border-radius:9px;border:1px solid rgba(255,255,255,.1);"

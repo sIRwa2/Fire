@@ -197,12 +197,14 @@ assert ".hdr-search{margin:0 0 14px;opacity:0" in tpl, \
     "search bar is not hidden by opacity; the reveal would shift the header"
 assert "display:none" not in tpl.split(".hdr-search{")[1][:200], \
     "search bar hidden with display:none, which does not reserve its height"
-assert ".page-wrap:has(> header:hover) .hdr-search" in tpl, \
-    "hovering the header no longer reveals the search bar"
+assert ".hdr-search:hover{opacity:1}" in tpl, \
+    "the search bar's own strip no longer reveals it"
 assert ".hdr-search:focus-within{opacity:1}" in tpl, \
     "search bar would fade out while being typed in"
-assert "@supports not selector(:has(*)){.hdr-search{opacity:1}}" in tpl, \
-    "no :has() fallback; the bar would be unreachable on older Safari"
+# The strip is the only trigger: revealing from the header block as well put a
+# second, disjoint hover zone 50px below the bar.
+assert ":has(> header:hover)" not in tpl, \
+    "the header block is a second hover zone; the reveal should be the strip alone"
 # A touch device has no hover, so the bar must be exempted or it is invisible
 # and unreachable on a phone.
 touch = re.search(r"@media \(hover:none\)\{(.*?)\}", tpl, re.S).group(1)

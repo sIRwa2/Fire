@@ -183,18 +183,28 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     check(`${label}: hidden search bar still reserves its height`, s.searchBoxHeight > 20,
       s.searchBoxHeight);
 
+    // The header block is a separate trigger zone ~50px below the bar, so
+    // revealing from it meant the bar appeared with the pointer nowhere near
+    // it. Checked first, while the pointer is still parked away from both.
+    await page.hover('.page-wrap > header');
+    await page.waitForTimeout(300);
+    const onHeader = await page.evaluate(() =>
+      getComputedStyle(document.querySelector('.hdr-search')).opacity);
+    check(`${label}: hovering the header does not reveal the search bar`,
+      onHeader === '0', onHeader);
+
     // The point of hiding by opacity: hovering must reveal the bar without
     // moving anything. Measured against the greeting, since that is what a
     // collapse would visibly shove around.
     const beforeHover = await page.evaluate(() =>
       Math.round(document.querySelector('.hdr-row h1').getBoundingClientRect().top));
-    await page.hover('.page-wrap > header');
+    await page.hover('.hdr-search');
     await page.waitForTimeout(300);
     const afterHover = await page.evaluate(() => ({
       opacity: getComputedStyle(document.querySelector('.hdr-search')).opacity,
       greetingTop: Math.round(document.querySelector('.hdr-row h1').getBoundingClientRect().top),
     }));
-    check(`${label}: hovering the header reveals the search bar`,
+    check(`${label}: hovering the bar's own strip reveals it`,
       afterHover.opacity === '1', afterHover.opacity);
     check(`${label}: revealing the bar does not move the greeting`,
       afterHover.greetingTop === beforeHover, `${beforeHover} -> ${afterHover.greetingTop}`);
