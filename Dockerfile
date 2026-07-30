@@ -3,7 +3,7 @@
 # Keep this COPY in step with the whitelist in .dockerignore.
 FROM python:3.12-alpine AS localize
 WORKDIR /build
-COPY localize.py extract.py storage-shim.js firehome.html ./
+COPY localize.py extract.py storage-shim.js header-swipe.js firehome.html ./
 RUN python localize.py firehome.html patched.html \
     && python extract.py patched.html dist
 

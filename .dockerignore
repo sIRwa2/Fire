@@ -3,6 +3,7 @@
 !localize.py
 !extract.py
 !storage-shim.js
+!header-swipe.js
 !nginx.conf
 !svg/
 !favicon.svg

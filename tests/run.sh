@@ -123,6 +123,10 @@ shim = open(root + "/storage-shim.js", encoding="utf-8").read()
 assert shim in html, "storage-shim.js is not present verbatim"
 print("ok    storage-shim.js embedded intact")
 
+swipe = open(root + "/header-swipe.js", encoding="utf-8").read()
+assert swipe in html, "header-swipe.js is not present verbatim"
+print("ok    header-swipe.js embedded intact")
+
 # The exported template carries no title or icon links, so a missing injection
 # means a blank tab icon and a /favicon.ico probe on every load.
 for needed in ('<title>firehome<', 'rel="icon" href="/favicon.svg"',
@@ -289,7 +293,14 @@ assert '<option value="">Custom</option>' in tpl, \
     "no Custom entry, so hand-picked colours would blank the select"
 assert "chooseTheme = (e) => {" in tpl and "if (raw === '') return;" in tpl, \
     "choosing Custom should be a no-op"
-print("ok    themes are a dropdown")
+# Every select needs its own data-k. The mobile-layout dropdown arrived second and
+# silently stole querySelector('select') from the theme tests, which then asserted
+# happily against the wrong element.
+selects = re.findall(r"<select ([^>]*)>", tpl)
+keys = [re.search(r'data-k="([^"]+)"', s) for s in selects]
+assert all(keys), "a select carries no data-k, so tests cannot address it unambiguously"
+assert len({k.group(1) for k in keys}) == len(keys), "two selects share a data-k"
+print("ok    themes are a dropdown (%d selects, each addressable)" % len(selects))
 
 # Five font sizes, covering everything but the date and greeting. They travel as
 # custom properties because the values are per-user and this stylesheet is static.
@@ -337,6 +348,26 @@ assert ".bm-cat .cat-grip,.bm-cat .cat-del{flex:0 0 auto}" in tpl, \
     "the category controls can be squeezed"
 assert "overflow-wrap:anywhere" in tpl, "a single long word can still overflow the column"
 print("ok    responsive mobile layouts wired")
+
+# Swipe-to-reveal for the header buttons. Every part of this is a way for the
+# lock button to become unreachable, so the gating is asserted, not assumed.
+swipe_css = re.search(r"@media \(max-width:768px\) and \(hover:none\)\{(.*?)\}\s*(?=\[data-locked|@media|\Z)",
+                      tpl, re.S)
+assert swipe_css, "no header-swipe media query"
+sblock = swipe_css.group(1)
+assert "(hover:none)" in tpl, "a narrow desktop window would lose the buttons to a gesture it cannot make"
+for rule in ('[data-hdr-swipe="1"] .hdr-row{position:relative;overflow:hidden;touch-action:pan-y}',
+             "transform:translateX(calc(var(--hdr-reveal,120px) - var(--hdr-slide,0px)))"):
+    assert rule in sblock, "header swipe rule missing: %s" % rule
+# Nothing may hide the buttons unless the script that reveals them is running.
+for line in sblock.split("}"):
+    if ".hdr-row" in line and "@media" not in line:
+        assert '[data-hdr-swipe="1"]' in line, \
+            "a header swipe rule is not gated on the script: %s" % line
+assert "root.setAttribute('data-hdr-swipe', '1')" in html, \
+    "the script never enables its own CSS"
+assert "touch-action:pan-y" in sblock, "a vertical scroll would be swallowed by the header"
+print("ok    header swipe-to-reveal gated on script, touch and width")
 
 print("ok    header lock/settings buttons flattened, locked state preserved")
 

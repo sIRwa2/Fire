@@ -626,6 +626,44 @@ forced visible on touch, and at 58px it covered the entire icon — obscuring th
 thing the mode exists to show. It is a launcher view; switch to Icon and text to
 edit an entry.
 
+### Swiping the greeting
+
+The settings and lock buttons are hover-revealed on desktop, and `TOUCH_CSS` has
+to force them visible where there is no hover — so on a phone they sat permanently
+beside the greeting, two controls used once a week next to the one line of text the
+header exists for. They now wait just off the right edge: **drag the greeting left
+and they slide in**, drag right (or tap anything else) and they go away again. A
+faint `‹` at the edge is the only hint, fading out as the drag progresses.
+
+`header-swipe.js` handles the gesture and `HEADER_SWIPE_CSS` the movement, both
+driven by one custom property — `--hdr-slide`, 0 to `--hdr-reveal` — so the
+greeting and the buttons move off a single number. The transition is suppressed
+while a finger is down, or the movement would lag a fifth of a second behind it.
+Past halfway on release it opens, otherwise it springs back.
+
+The buttons must never become unreachable, since the lock button is the only way
+out of a locked dashboard. So the whole thing is gated three ways, all asserted in
+`tests/run.sh`:
+
+| gate | why |
+| --- | --- |
+| `max-width: 768px` | a wide window is untouched |
+| `(hover: none)` | a narrow *desktop* window keeps the hover reveal — there is no way to swipe with a mouse |
+| `[data-hdr-swipe="1"]` | set on `<html>` by the script itself; if it fails to load, the header keeps its old always-visible layout |
+
+`touch-action: pan-y` on the header lets the browser keep vertical scrolling for
+itself, so the listeners can stay passive and a scroll that starts on the greeting
+still scrolls. The script decides direction after 8px and hands a vertical gesture
+straight back. Touches that start on a button are ignored outright, so a tap still
+activates it.
+
+`overflow: hidden` on the header row is what actually hides the parked buttons —
+safe because the settings panel is a fixed overlay elsewhere in the DOM, not a
+child of the header. The buttons are measured on each touch rather than assumed;
+until the app has rendered the header there is nothing to measure, so the CSS
+falls back to 120px, which is wider than they are and parks them off-screen either
+way.
+
 ## Font sizes
 
 Five controls under **Settings → Font sizes**, covering every piece of dashboard

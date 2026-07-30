@@ -39,6 +39,7 @@ node tests/theme-select.mjs http://192.168.0.108:8080 # the theme dropdown
 node tests/font-sizes.mjs http://192.168.0.108:8080   # each size control in isolation
 node tests/theme-persist.mjs http://192.168.0.108:8080 # theme + colour pickers persist
 node tests/mobile.mjs http://192.168.0.108:8080       # the three mobile layouts
+node tests/header-swipe.mjs http://192.168.0.108:8080 # swipe-to-reveal on a phone
 ```
 
 `verify.sh` is non-destructive — its config write uses a scratch key and removes

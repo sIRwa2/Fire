@@ -101,8 +101,8 @@ check('background survives a reload', reloaded.bg === 'rgb(16, 24, 32)', reloade
 
 // 4. A preset theme, then a reload.
 await openSettings();
-const label = (await p.evaluate(() => [...document.querySelector('select').options].map(o => o.textContent)))[3];
-await p.selectOption('select', { label });
+const label = (await p.evaluate(() => [...document.querySelector('select[data-k="theme"]').options].map(o => o.textContent)))[3];
+await p.selectOption('select[data-k="theme"]', { label });
 await p.waitForTimeout(700);
 await p.keyboard.press('Escape'); await p.waitForTimeout(300);
 const themed = await look();

@@ -45,9 +45,9 @@ const openSettings = async () => {
 };
 await openSettings();
 
-const sel = 'select';
+const sel = 'select[data-k="theme"]';
 const info = () => p.evaluate(() => {
-  const s = document.querySelector('select');
+  const s = document.querySelector('select[data-k="theme"]');
   return s ? {
     options: s.options.length,
     first: s.options[0]?.textContent,
@@ -71,15 +71,15 @@ check('the old grid buttons are gone', a && a.gridButtonsGone, a && a.gridButton
 check('starts on Custom (default colours match no preset)', a && a.value === '', a && a.value);
 
 // Pick a theme by its label and confirm it applies and persists.
-const target = (await p.evaluate(() => [...document.querySelector('select').options]
+const target = (await p.evaluate(() => [...document.querySelector('select[data-k="theme"]').options]
   .map(o => o.textContent).slice(1)))[1];
 await p.selectOption(sel, { label: target });
 await p.waitForTimeout(600);
 const applied = await p.evaluate(() => ({
   bodyBg: getComputedStyle(document.body).backgroundColor,
   accent: getComputedStyle(document.body).getPropertyValue('--accent').trim(),
-  value: document.querySelector('select').value,
-  label: document.querySelector('select').options[document.querySelector('select').selectedIndex].textContent,
+  value: document.querySelector('select[data-k="theme"]').value,
+  label: document.querySelector('select[data-k="theme"]').options[document.querySelector('select[data-k="theme"]').selectedIndex].textContent,
 }));
 console.log('after choosing', JSON.stringify(target), '->', JSON.stringify(applied));
 check('choosing applies the theme', applied.label === target && applied.value !== '', JSON.stringify(applied));

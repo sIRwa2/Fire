@@ -35,6 +35,7 @@ import sys
 ICON_CDN = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/"
 ICON_LOCAL = "/icons/"
 SHIM_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage-shim.js")
+SWIPE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "header-swipe.js")
 
 TEMPLATE_RE = re.compile(
     r'(<script type="__bundler/template">)(.*?)(</script>)', re.S
@@ -1099,7 +1100,7 @@ THEME_SELECT_PATCHES = tuple(
             "            </button>\n"
             "          </sc-for>\n"
             "        </div>",
-            '        <select value="{{ themeIndex }}"'
+            '        <select value="{{ themeIndex }}" data-k="theme"'
             ' sc-camel-on-change="{{ chooseTheme }}" style="width:100%;'
             "background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);"
             "border-radius:7px;padding:10px 12px;font-size:14px;color:#eceef1;"
@@ -1298,6 +1299,53 @@ MOBILE_CSS = (
 )
 
 
+# ── Swipe the greeting to reveal the header buttons ─────────────────────────
+# The settings and lock buttons are hover-revealed on desktop, and TOUCH_CSS has
+# to force them visible where there is no hover — so on a phone they sit
+# permanently beside the greeting. This parks them just off the right edge and
+# brings them in on a leftward drag, driven by header-swipe.js.
+#
+# Gated three ways, because an unreachable lock button means a dashboard nobody
+# can unlock:
+#
+#   * the breakpoint, so a wide window is untouched;
+#   * (hover:none), so a narrow *desktop* window keeps the hover reveal — there
+#     is no way to swipe with a mouse, and this is the only reason the media
+#     query is not simply MOBILE_CSS's;
+#   * [data-hdr-swipe="1"], which the script sets on <html> once it is running.
+#     No script, no change in behaviour.
+#
+# The greeting and the buttons both move off one variable: --hdr-slide, 0 to
+# --hdr-reveal, written by the script during the drag. The transition is
+# suppressed while a finger is down (data-hdr-drag) so the movement tracks the
+# finger rather than lagging a fifth of a second behind it.
+HEADER_SWIPE_CSS = (
+    "@media (max-width:" + MOBILE_BREAKPOINT + ") and (hover:none){"
+    # overflow:hidden is what actually hides the parked buttons. The settings
+    # panel is a fixed overlay elsewhere in the DOM, so it is not clipped by this.
+    # pan-y keeps vertical scrolling native while horizontal drags come to us.
+    '[data-hdr-swipe="1"] .hdr-row'
+    "{position:relative;overflow:hidden;touch-action:pan-y}"
+    '[data-hdr-swipe="1"] .hdr-row h1'
+    "{flex:1 1 auto;min-width:0;transform:translateX(calc(0px - var(--hdr-slide,0px)))}"
+    # position and padding are inline on the element, so they need !important.
+    '[data-hdr-swipe="1"] .hdr-row .hdr-actions'
+    "{position:absolute!important;right:0;top:0;height:100%;padding-bottom:0!important;"
+    "transform:translateX(calc(var(--hdr-reveal,120px) - var(--hdr-slide,0px)))}"
+    '[data-hdr-swipe="1"]:not([data-hdr-drag="1"]) .hdr-row h1,'
+    '[data-hdr-swipe="1"]:not([data-hdr-drag="1"]) .hdr-row .hdr-actions'
+    "{transition:transform .22s ease}"
+    # Something has to say the gesture exists. A chevron at the edge, fading out
+    # as the drag progresses — off --hdr-progress rather than --hdr-slide because
+    # calc() cannot divide a length by a length.
+    '[data-hdr-swipe="1"] .hdr-row::after'
+    '{content:"‹";position:absolute;right:2px;top:50%;transform:translateY(-50%);'
+    "pointer-events:none;font-size:22px;line-height:1;color:#6b7480;"
+    "opacity:calc(0.5 - var(--hdr-progress,0) * 0.5)}"
+    "}"
+)
+
+
 def _mobile_options():
     return "\n".join(
         '            <option value="%s">%s</option>' % (value, label)
@@ -1341,7 +1389,7 @@ MOBILE_PATCHES = tuple(
             '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
             "text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px\">"
             "Mobile layout</div>\n"
-            '        <select value="{{ mobileLayout }}"'
+            '        <select value="{{ mobileLayout }}" data-k="mobileLayout"'
             ' sc-camel-on-change="{{ chooseMobile }}" style="width:100%;'
             "background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);"
             "border-radius:7px;padding:10px 12px;font-size:14px;color:#eceef1;"
@@ -1397,14 +1445,16 @@ def patch_template(html: str) -> str:
     so a nested </script> cannot terminate the outer tag early.
     """
     shim = open(SHIM_PATH, encoding="utf-8").read()
+    swipe = open(SWIPE_PATH, encoding="utf-8").read()
     tag = (
         HEAD_MARKUP
         + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + ADD_BUTTON_CSS + ADD_LABEL_CSS
         + CARD_MARGIN_CSS
         + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
         + ICON_TILE_CSS + CATEGORY_GRIP_CSS + FONT_SIZE_CSS + TOUCH_CSS
-        + MOBILE_CSS + LOCKED_CSS + "</style>"
+        + MOBILE_CSS + HEADER_SWIPE_CSS + LOCKED_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
+        + "<script>\n" + swipe + "\n</script>"
     )
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")
 
