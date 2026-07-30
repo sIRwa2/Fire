@@ -73,6 +73,28 @@ for target in sorted(mounted):
     )
 print("ok    every api volume mountpoint exists in the image (%s)" % ", ".join(sorted(mounted)))
 
+# The CSP has to permit the search bar's own destination. form-action was
+# 'none', which blocks a submit with no navigation and no visible error — the
+# search bar looked wired up and Enter simply did nothing. Nothing caught it
+# because the page under test here is served without any CSP at all, so the
+# policy is checked against the source it constrains instead.
+nginx = open(os.path.join(root, "nginx.conf"), encoding="utf-8").read()
+csp = re.search(r'add_header Content-Security-Policy "([^"]*)"', nginx).group(1)
+form_action = re.search(r"form-action ([^;\"]*)", csp).group(1).strip()
+assert form_action != "'none'", \
+    "form-action is 'none'; the search bar's submit is blocked and Enter does nothing"
+localize_py = open(os.path.join(root, "localize.py"), encoding="utf-8").read()
+action = re.search(r'^SEARCH_ACTION = "([^"]*)"', localize_py, re.M).group(1)
+origin = "/".join(action.split("/")[:3])
+assert origin in form_action, (
+    "CSP form-action (%s) does not permit SEARCH_ACTION (%s); Enter would be "
+    "silently blocked in the real deployment" % (form_action, origin)
+)
+# Narrow on purpose: a wildcard here would let any injected form post anywhere.
+assert "*" not in form_action and "'self'" not in form_action.replace("'none'", ""), \
+    "form-action should list only the search origin, not a wildcard or 'self'"
+print("ok    CSP form-action permits exactly the search engine (%s)" % form_action)
+
 # Only the first stage's files are visible to localize.py in the container.
 sources = copy_sources(stages[0])
 assert sources, "no COPY sources found in the first build stage"

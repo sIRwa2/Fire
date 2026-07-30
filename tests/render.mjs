@@ -42,9 +42,13 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     const label = `${engine}/${populated ? 'populated' : 'empty'}`;
     const page = await browser.newPage({ viewport: { width: 1504, height: 900 } });
     const external = [], broken = [], placeholders = [];
+    // Set only while the search-submit check below is deliberately firing one
+    // outbound navigation. Everything else must still count as a leak, so this
+    // is a narrow window rather than a permanent exemption for the engine.
+    let expectSearchNavigation = false;
     page.on('request', (r) => {
       const host = new URL(r.url()).host;
-      if (host && host !== new URL(base).host) external.push(r.url());
+      if (host && host !== new URL(base).host && !expectSearchNavigation) external.push(r.url());
     });
     page.on('response', (r) => {
       if (r.status() < 400) return;
@@ -203,7 +207,25 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
       getComputedStyle(document.querySelector('.hdr-search')).opacity);
     check(`${label}: focused search bar stays visible off-hover`,
       searchFocusOpacity === '1', searchFocusOpacity);
-    await page.evaluate(() => document.querySelector('.hdr-search input').blur());
+
+    // Enter must actually navigate. This is the one check that exercises the
+    // deployment's CSP: form-action was 'none', which blocks the submit with no
+    // navigation and no visible error, so the bar looked fine and did nothing.
+    // The request is aborted rather than followed, so no traffic leaves the box.
+    let submitted = null;
+    expectSearchNavigation = true;
+    await page.route('**duckduckgo.com**', (r) => {
+      submitted = r.request().url();
+      r.abort();
+    });
+    await page.type('.hdr-search input', 'proxmox docs');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1200);
+    check(`${label}: Enter submits the search`,
+      submitted === 'https://duckduckgo.com/?q=proxmox+docs', submitted || 'no navigation');
+    await page.unroute('**duckduckgo.com**');
+    await page.goto(base, { waitUntil: 'networkidle' });
+    expectSearchNavigation = false;
     check(`${label}: add button has no border`, transparent(s.addBorder), s.addBorder);
     check(`${label}: add button has no focus ring at rest`, s.addOutline === 'none', s.addOutline);
     check(`${label}: + glyph has no background`, transparent(s.plusBg), s.plusBg);
