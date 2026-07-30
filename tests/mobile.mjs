@@ -71,7 +71,7 @@ for (const [mode, expect] of [
   check(`${mode}: app columns`, r.appCols === expect.appCols, r.appCols);
   check(`${mode}: text ${expect.text ? 'shown' : 'hidden'}`, r.text === expect.text, r.text);
   check(`${mode}: icon ${expect.icon ? 'shown' : 'hidden'}`, r.icon === expect.icon, r.icon);
-  check(`${mode}: one category per row`, r.bmCols === 1, r.bmCols);
+  check(`${mode}: two categories per row`, r.bmCols === 2, r.bmCols);
   check(`${mode}: no horizontal overflow`, !r.overflow, r.overflow);
   if (mode === 'icons') {
     // The overlay is forced visible on touch and would cover a 58px icon.
@@ -95,6 +95,32 @@ await desk.close();
 const dflt = await open(build(null), devices['iPhone 13']);
 check('defaults to icon and text', (await probe(dflt)).mode === 'both');
 await dflt.close();
+
+// A long category name must not push the grip and DELETE out of its column. Two
+// columns on a phone is ~163px, so the header row has to wrap rather than
+// overflow — it used to put DELETE 46px off-screen. Checked on desktop too,
+// where five columns are narrower still and only the page margin hid it.
+const long = build('both');
+long.v1.groups[0].name = 'Infrastructure & Monitoring';
+for (const [label, opts] of [
+  ['phone', devices['iPhone 13']],
+  ['desktop', { viewport: { width: 1400, height: 900 } }],
+]) {
+  const page = await open(long, opts);
+  const r = await page.evaluate(() => ({
+    escaping: [...document.querySelectorAll('.bm-cat')].flatMap((c) => {
+      const right = c.getBoundingClientRect().right;
+      return [...c.querySelector('div').children]
+        .filter(s => s.getBoundingClientRect().right > right + 0.5)
+        .map(s => (s.className || 'name').toString().split(' ')[0]);
+    }),
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  }));
+  check(`${label}: a long category name keeps its controls in the column`,
+    r.escaping.length === 0, r.escaping.join(','));
+  check(`${label}: a long category name causes no horizontal overflow`, !r.overflow, r.overflow);
+  await page.close();
+}
 
 console.log(fail ? `\n${fail} failed` : '\nall good');
 await browser.close();

@@ -586,8 +586,24 @@ The page was not responsive at all. Both grids carry hardcoded column counts, so
 390px phone got the applications in **four columns of 69px** — every title
 truncated to "P.." — and the categories in **five columns of 50px**, where the
 names overlapped the delete buttons. That is fixed for everyone below 768px,
-independently of the setting: one category per row, and a greeting that no longer
-wraps into three lines and shoves the header buttons around.
+independently of the setting: **two categories per row**, and a greeting that no
+longer wraps into three lines and shoves the header buttons around.
+
+Two columns leaves each category about 163px wide, which surfaced a layout bug the
+five-column desktop had all along. The category header is a flex row of name, drag
+grip and DELETE, and every flex child defaults to `min-width:auto` — so the name
+refuses to shrink below its longest word and pushes the controls out. A category
+called "Infrastructure & Monitoring" put DELETE 46px off-screen on a phone; on a
+1400px desktop the controls escaped the column too, hidden only by the page margin.
+
+The fix lets the header row wrap, so the name keeps the full column width and the
+controls drop to a second line only when they no longer fit beside it. Short names
+("Dev", "Media") still sit on one line exactly as before. The alternative —
+squeezing the name with `min-width:0` and pinning the controls — broke
+"Productivity" across three lines inside 61px, which reads worse than a wrapped
+row. `overflow-wrap:anywhere` stays for the one case wrapping cannot help: a single
+word longer than the column. All of it sits outside the media query, since the
+desktop columns are the narrower ones.
 
 "Mobile" is decided by viewport width, not by sniffing the user agent, so a narrow
 desktop window gets the same treatment — which is what makes it responsive rather
@@ -603,7 +619,7 @@ than device-specific. (Touch capability is detected separately, via
 | **Text only** | One per row, no icons — bookmark icons go too. |
 
 The setting governs the application grid, which is the part with three sensible
-presentations; categories always collapse to one per row.
+presentations; categories are always two per row, in every mode.
 
 Icons-only additionally hides the per-card edit/delete overlay. That overlay is
 forced visible on touch, and at 58px it covered the entire icon — obscuring the one

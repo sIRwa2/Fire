@@ -316,8 +316,8 @@ print("ok    five font sizes wired to custom properties")
 mobile = re.search(r"@media \(max-width:768px\)\{(.*?)\}(?=\[data-locked|\Z)", tpl, re.S)
 assert mobile, "no mobile media query"
 block = mobile.group(1)
-assert ".bm-grid{grid-template-columns:1fr!important}" in block, \
-    "categories still use five columns on a phone"
+assert ".bm-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}" in block, \
+    "categories do not sit two per row on a phone"
 for mode in ("both", "icons", "text"):
     assert '[data-mobile="%s"]' % mode in block, "no rule for the %s layout" % mode
 assert 'data-mobile="{{ mobileLayout }}"' in tpl, "the root carries no mobile flag"
@@ -327,6 +327,15 @@ assert '[data-mobile="icons"] .app-grid a[data-drag-id] > span[data-nodrag]{disp
     "the edit overlay would cover a 58px icon in icons-only mode"
 # Everything must sit inside the media query, or desktop changes too.
 assert "@media" in tpl[:tpl.index('[data-mobile="both"]')], "mobile rules escaped the media query"
+# Two columns is ~163px on a phone, narrow enough that a long category name
+# pushed the grip and DELETE out of the column. The header row has to wrap, and
+# the name has to be allowed to break — outside the media query, because five
+# desktop columns are narrower still.
+assert ".bm-cat > div:first-child{flex-wrap:wrap}" in tpl, \
+    "the category header cannot wrap, so a long name pushes its controls out"
+assert ".bm-cat .cat-grip,.bm-cat .cat-del{flex:0 0 auto}" in tpl, \
+    "the category controls can be squeezed"
+assert "overflow-wrap:anywhere" in tpl, "a single long word can still overflow the column"
 print("ok    responsive mobile layouts wired")
 
 print("ok    header lock/settings buttons flattened, locked state preserved")

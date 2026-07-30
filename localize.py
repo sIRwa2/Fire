@@ -718,6 +718,22 @@ CATEGORY_GRIP_CSS = (
     "cursor:grab;touch-action:none}"
     ".bm-cat:hover .cat-grip{opacity:1}"
     ".bm-cat .cat-grip:active{cursor:grabbing}"
+    # The header is a flex row of name + grip + DELETE, and every child defaults
+    # to min-width:auto — so the name refuses to shrink past its longest word and
+    # pushes the controls out of the column. A category called "Infrastructure &
+    # Monitoring" put DELETE 46px off-screen on a phone; on a 1400px desktop the
+    # controls escaped the column too and were only hidden by the page margin.
+    # So let the row wrap: the name keeps the full column width and the controls
+    # drop to a second line only when they no longer fit beside it. Short names
+    # ("DEV", "MEDIA") still sit on one line exactly as before. Squeezing the name
+    # instead — min-width:0 with the controls pinned — left "Productivity" broken
+    # across three lines inside 61px, which is worse than a wrapped row.
+    # overflow-wrap stays for the one case wrapping cannot help: a single word
+    # longer than the column.
+    ".bm-cat > div:first-child{flex-wrap:wrap}"
+    ".bm-cat > div:first-child > span:first-child"
+    "{min-width:0;overflow-wrap:anywhere}"
+    ".bm-cat .cat-grip,.bm-cat .cat-del{flex:0 0 auto}"
 )
 
 
@@ -1240,9 +1256,12 @@ FONT_SIZE_PATCHES = tuple(
 # than device-specific.
 #
 # The setting governs the application grid, which is the part with three sensible
-# presentations. Categories always collapse to one per row, since five columns of
-# anything is wrong on a phone.
+# presentations. Categories are always two per row, since five columns of anything
+# is wrong on a phone. Two columns leaves ~163px per category, which is what
+# exposed the header overflow that CATEGORY_GRIP_CSS now fixes.
 MOBILE_BREAKPOINT = "768px"
+# Categories per row on a phone. Five was the desktop count and unusable there.
+MOBILE_CATEGORY_COLUMNS = "2"
 MOBILE_LAYOUTS = (
     ("both", "Icon and text"),
     ("icons", "Icons only"),
@@ -1251,9 +1270,11 @@ MOBILE_LAYOUTS = (
 
 MOBILE_CSS = (
     "@media (max-width:" + MOBILE_BREAKPOINT + "){"
-    # Baseline, whatever the mode. One category per row, and a greeting that does
-    # not wrap into three lines and shove the header buttons around.
-    ".bm-grid{grid-template-columns:1fr!important}"
+    # Baseline, whatever the mode. Two categories per row rather than five, and a
+    # greeting that does not wrap into three lines and shove the header buttons
+    # around.
+    ".bm-grid{grid-template-columns:repeat(" + MOBILE_CATEGORY_COLUMNS
+    + ",minmax(0,1fr))!important}"
     ".hdr-row h1{font-size:34px!important}"
     # Icon and text, one per row.
     '[data-mobile="both"] .app-grid,'
