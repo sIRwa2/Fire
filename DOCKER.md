@@ -452,10 +452,31 @@ already for. `http://synthtopia.com` still ends up with a fetched favicon.
 auto-attached one is replaced when the URL changes, and dropped when the new URL
 matches nothing — never left pointing at the previous host's app.
 
-Which icon is attached shows in the dialog's **preview tile**, not in the grid: the
-selected-tile highlight (`ic.bg` / `ic.border`) is overridden by `ICON_TILE_CSS`,
-which flattens every tile. Restoring it for the selected tile alone would need a
-marker on the element, since nothing in the markup distinguishes it.
+Which icon is attached is shown twice: the grid tile is **outlined in the accent**,
+and the dialog's icon field gets the same outline, so the two read as one state
+rather than two unrelated boxes.
+
+That needed restoring. Flattening the picker tiles
+(`background: none; border-color: transparent`, both `!important`) had flattened
+the *selected* state along with the resting one — `ic.border` was already
+`var(--accent)` for the selected tile, but the flattening rule overrode it. It
+barely mattered while every icon was a deliberate click; once a pasted URL attaches
+one, the outline is the only way to see what you are about to store.
+
+Nothing in the markup distinguished the selected tile, so there was nothing for CSS
+to hook. Two markers were added — `data-sel` on each grid tile and
+`data-icon-field` on the icon field — and the outline hangs off those:
+
+```css
+span[data-icon][data-sel="1"]{border-color:var(--accent)!important}
+[data-icon-field="1"]{border-color:var(--accent)!important}
+```
+
+`[data-sel="1"]` is (0,2,1) against the flattening rule's (0,1,1), so it wins on
+specificity rather than on source order. Only the border *colour* is restored — the
+1px solid border is already in the markup, so nothing shifts when a tile becomes
+selected. And because it is `var(--accent)`, the outline follows the theme: green
+by default, amber under Ayu.
 
 ### Enter commits the dialog
 

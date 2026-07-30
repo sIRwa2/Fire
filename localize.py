@@ -340,6 +340,20 @@ JS_PATCHES = (
 ICON_TILE_CSS = (
     "span[data-icon],span[data-icon]:hover{"
     "background:none!important;border-color:transparent!important}"
+    # ...except the chosen one. Flattening the tiles took the selected state with
+    # it: ic.border is already var(--accent) for the selected tile, but the rule
+    # above is !important and overrode it, so nothing in the grid showed which
+    # icon was attached. That mattered little while every icon was a deliberate
+    # click; now that a pasted URL attaches one, it is the only way to see what
+    # you are about to store.
+    #
+    # [data-sel="1"] is (0,2,1) against the flattening rule's (0,1,1), so it wins
+    # on specificity and does not depend on source order. The border is already
+    # in the markup at 1px solid — only its colour is restored, so nothing moves.
+    'span[data-icon][data-sel="1"]{border-color:var(--accent)!important}'
+    # The dialog's preview tile gets the same outline, so the icon field and the
+    # grid tile read as the same state rather than two unrelated boxes.
+    '[data-icon-field="1"]{border-color:var(--accent)!important}'
 )
 
 # Every control for editing the dashboard is hover-revealed, by one of two
@@ -665,6 +679,38 @@ URL_TITLE_PATCHES = tuple(
   };
   titleFromUrl = (raw) => this.labelFromUrl(raw).split(/[-_+.\\s]+/).filter(Boolean)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');""",
+        ),
+        (
+            # Nothing in the markup distinguished the selected tile, so the CSS
+            # had nothing to hook. ic.border already knows which one it is.
+            "mark the selected tile so it can be outlined",
+            "        bg: name === m.icon ? 'rgba(148,204,138,.18)' :"
+            " 'rgba(255,255,255,.04)',",
+            "        sel: name === m.icon ? '1' : '0',\n"
+            "        bg: name === m.icon ? 'rgba(148,204,138,.18)' :"
+            " 'rgba(255,255,255,.04)',",
+        ),
+        (
+            "carry that marker on the tile",
+            '<span data-icon="{{ ic.name }}" sc-camel-on-click="{{ pickIcon }}"',
+            '<span data-icon="{{ ic.name }}" data-sel="{{ ic.sel }}"'
+            ' sc-camel-on-click="{{ pickIcon }}"',
+        ),
+        (
+            "the same marker for the dialog's icon field",
+            "      hasIcon: !!(m && m.icon),",
+            "      hasIcon: !!(m && m.icon),\n"
+            "      iconSel: (m && m.icon) ? '1' : '0',",
+        ),
+        (
+            "carry it on the icon field",
+            '<span style="width:44px;height:44px;flex:none;display:grid;'
+            "place-items:center;border-radius:9px;background:rgba(255,255,255,.05);"
+            'border:1px solid rgba(255,255,255,.1)">',
+            '<span data-icon-field="{{ iconSel }}" style="width:44px;height:44px;'
+            "flex:none;display:grid;place-items:center;border-radius:9px;"
+            "background:rgba(255,255,255,.05);"
+            'border:1px solid rgba(255,255,255,.1)">',
         ),
         (
             # Anchored on what JS_PATCHES leaves behind. A click is a decision:

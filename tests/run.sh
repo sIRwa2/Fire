@@ -453,7 +453,21 @@ print("ok    icon list served from the api, update button wired")
 # class, whose base36 suffix moves whenever render order changes.
 assert 'data-icon="{{ ic.name }}"' in tpl, "icon tiles lost the data-icon hook"
 assert "span[data-icon],span[data-icon]:hover{" in tpl, "icon tile CSS missing"
-print("ok    icon tile styling injected")
+# Flattening the tiles also flattened the selected state, so the chosen icon is
+# outlined back in — on the grid tile and on the dialog's icon field, which have
+# to agree or they read as two unrelated boxes.
+assert 'data-sel="{{ ic.sel }}"' in tpl, "the selected tile carries no marker"
+assert "sel: name === m.icon ? '1' : '0'," in tpl, "nothing computes which tile is selected"
+assert 'data-icon-field="{{ iconSel }}"' in tpl, "the icon field carries no marker"
+assert "iconSel: (m && m.icon) ? '1' : '0'," in tpl, "nothing computes the icon field's state"
+for rule in ('span[data-icon][data-sel="1"]{border-color:var(--accent)!important}',
+             '[data-icon-field="1"]{border-color:var(--accent)!important}'):
+    assert rule in tpl, "selected-icon outline missing: %s" % rule
+# (0,2,1) beats the flattening rule's (0,1,1), so the outline does not depend on
+# which order the two rules end up in.
+assert tpl.index("span[data-icon],span[data-icon]:hover{") < \
+    tpl.index('span[data-icon][data-sel="1"]'), "the outline should follow the flattening rule"
+print("ok    icon tile styling injected, selection outlined")
 
 # Touch devices have no hover, which would leave every editing control
 # unreachable. Each hover-revealed hook must be covered by the (hover:none) rule.

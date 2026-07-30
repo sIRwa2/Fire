@@ -144,6 +144,29 @@ const preview = () => page.evaluate((d) => {
 }, DIALOG);
 check('the matching icon is selected', await preview() === '/icons/gitea.svg', await preview());
 
+// Both the grid tile and the icon field are outlined, so it is visible which one
+// is attached. The tiles are otherwise flattened, so an accent border is the
+// whole signal.
+const outlines = () => page.evaluate((d) => {
+  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim();
+  const rgb = (el) => el ? getComputedStyle(el).borderTopColor : null;
+  const toHex = (c) => {
+    const m = /rgba?\((\d+), ?(\d+), ?(\d+)/.exec(c || '');
+    return m ? '#' + [1, 2, 3].map(i => (+m[i]).toString(16).padStart(2, '0')).join('') : c;
+  };
+  const tiles = [...document.querySelectorAll(d + ' span[data-icon]')];
+  return {
+    accent: accent.toLowerCase(),
+    field: toHex(rgb(document.querySelector(d + ' [data-icon-field]'))),
+    fieldFlag: document.querySelector(d + ' [data-icon-field]')?.dataset.iconField,
+    outlined: tiles.filter(t => toHex(rgb(t)) === accent.toLowerCase()).map(t => t.dataset.icon),
+  };
+}, DIALOG);
+let o = await outlines();
+check('the chosen tile is outlined in the accent', o.outlined.join(',') === 'gitea', JSON.stringify(o));
+check('the icon field is outlined too', o.field === o.accent, JSON.stringify(o));
+check('exactly one tile is outlined', o.outlined.length === 1, JSON.stringify(o));
+
 // The trap this must not fall into: the grid matches substrings, so for "plex"
 // the first tile shown is perplexity-dark. Only an exact name may be attached.
 await page.locator(`${DIALOG} input[data-field="url"]`).fill('http://plex.lan');
@@ -176,6 +199,21 @@ await page.waitForTimeout(400);
 check('an unmatched host leaves the grid full', await gridCount() === unfiltered, await gridCount());
 check('but the title is still guessed',
   (await fields()).title === 'Zzzznotathing', JSON.stringify(await fields()));
+// Nothing attached means nothing outlined — the icon field must not claim a
+// selection the entry does not have.
+o = await outlines();
+check('no icon attached leaves the field un-outlined', o.fieldFlag === '0' && o.field !== o.accent,
+  JSON.stringify(o));
+check('and no tile is outlined', o.outlined.length === 0, JSON.stringify(o));
+
+// Clicking a different icon moves the outline with it.
+await page.locator(`${DIALOG} input[data-field="q"]`).fill('grafana');
+await page.waitForTimeout(400);
+await page.locator(`${DIALOG} span[data-icon="grafana"]`).click();
+await page.waitForTimeout(400);
+o = await outlines();
+check('picking a tile moves the outline', o.outlined.join(',') === 'grafana', JSON.stringify(o));
+check('and the icon field follows', o.field === o.accent, JSON.stringify(o));
 await closeDialog();
 
 // 8. Paste, Enter, done — the whole point: the entry lands with its icon, and no
