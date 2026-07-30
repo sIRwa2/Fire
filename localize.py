@@ -117,7 +117,26 @@ CLEAR_X = (
     '<path d="M5 5l14 14M19 5L5 19"/></svg>\')'
 )
 SEARCH_CSS = (
-    ".hdr-search{margin:0 0 22px}"
+    # opacity, never display or height: the row keeps its box whether or not the
+    # bar is showing, so revealing it cannot move the date or the greeting. That
+    # is the whole reason this is not a collapse.
+    ".hdr-search{margin:0 0 14px;opacity:0;transition:opacity .18s ease}"
+    # Revealed from the whole header block rather than the strip itself, so the
+    # bar is reachable by aiming at the date or the greeting. .page-wrap is the
+    # common ancestor: the form is a sibling of <header>, so a
+    # `header:hover ~ .hdr-search` would only ever match hovering the header,
+    # and hovering the bar itself would hide it again mid-type.
+    ".page-wrap:has(> header:hover) .hdr-search,"
+    ".hdr-search:hover{opacity:1}"
+    # Kept up while the field has focus, or typing would blur it away the moment
+    # the pointer left. Its own rule, not appended to the list above: a selector
+    # list is dropped whole if any part fails to parse, and :focus-within is the
+    # newer of the two.
+    ".hdr-search:focus-within{opacity:1}"
+    # :has() is Safari 15.4+/Chrome 105+. Without it the two rules above are
+    # dropped and only the bar's own :hover survives, which is a strip you
+    # cannot find. Fall back to always-visible rather than unreachable.
+    "@supports not selector(:has(*)){.hdr-search{opacity:1}}"
     # Full width of the wrapper, so it reads as a bar rather than a stray field.
     ".hdr-search input{width:100%;box-sizing:border-box;padding:11px 14px;"
     "border-radius:9px;border:1px solid rgba(255,255,255,.1);"
@@ -420,6 +439,9 @@ ICON_TILE_CSS = (
 TOUCH_CSS = (
     "@media (hover:none){"
     ".app-grid .add-app,.hdr-row .hdr-actions,.bm-grid .new-cat,"".bm-cat .cat-del,.bm-cat .cat-grip,"
+    # The search bar is hover-revealed too, so without this it is invisible and
+    # unreachable on a phone rather than merely hidden.
+    ".hdr-search,"
     '[data-nodrag="1"]{opacity:1!important}'
     "}"
 )
@@ -841,16 +863,14 @@ SEARCH_PATCHES = tuple(
     (name, tpl(old), tpl(new))
     for name, old, new in (
         (
-            "search bar above the date",
-            '<div style="font-size:13px;letter-spacing:1px;'
-            'text-transform:uppercase;color:#b7bdc4">',
+            "search bar above the header",
+            '<header data-screen-label="Header">',
             '<form class="hdr-search" action="' + SEARCH_ACTION + '" '
             'method="get" role="search">'
             '<input type="search" name="q" autocomplete="off" '
             'aria-label="Search the web" placeholder="Search the web…">'
             "</form>"
-            '<div style="font-size:13px;letter-spacing:1px;'
-            'text-transform:uppercase;color:#b7bdc4">',
+            '<header data-screen-label="Header">',
         ),
     )
 )

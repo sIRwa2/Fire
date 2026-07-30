@@ -122,19 +122,25 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
           return i && i.getBoundingClientRect().width;
         })(),
         searchType: document.querySelector('.hdr-search input')?.type,
-        // The date line is the neighbour the bar is meant to align with, so it
-        // is the honest width to compare against — .page-wrap has 250px of
+        // The header is the neighbour the bar is meant to align with, so it is
+        // the honest width to compare against — .page-wrap has 250px of
         // horizontal padding, so wrapWidth would never match.
-        dateWidth: document.querySelector('.hdr-search')
-          ?.nextElementSibling?.getBoundingClientRect().width,
-        // Above the date, and inside the header — the two things the placement
-        // depends on, measured rather than assumed from source order.
-        searchAboveDate: (() => {
+        headerWidth: document.querySelector('.page-wrap > header')
+          ?.getBoundingClientRect().width,
+        // Above the header, and a direct child of .page-wrap — the sibling
+        // relationship the reveal selector keys on. Measured rather than
+        // assumed from source order.
+        searchAboveHeader: (() => {
           const i = document.querySelector('.hdr-search');
-          const d = i && i.nextElementSibling;
-          return !!(i && d && i.getBoundingClientRect().bottom <= d.getBoundingClientRect().top);
+          const h = document.querySelector('.page-wrap > header');
+          return !!(i && h && i.getBoundingClientRect().bottom <= h.getBoundingClientRect().top);
         })(),
-        searchInHeader: !!document.querySelector('.page-wrap > header .hdr-search'),
+        searchIsWrapChild: !!document.querySelector('.page-wrap > .hdr-search'),
+        // Hidden at rest, but still occupying its box: a zero height here would
+        // mean the reveal moves everything below it.
+        searchOpacity: cs('.hdr-search', 'opacity'),
+        searchBoxHeight: Math.round(
+          document.querySelector('.hdr-search')?.getBoundingClientRect().height || 0),
         addBorder: cs('.add-app', 'borderTopColor'),
         addOutline: cs('.add-app', 'outlineStyle'),
         plusBg: plus && getComputedStyle(plus).backgroundColor,
@@ -164,11 +170,40 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     // native clear button is missing and the styling above is inert.
     check(`${label}: search input is a native search field`, s.searchType === 'search',
       s.searchType);
-    check(`${label}: search bar sits in the header`, s.searchInHeader);
-    check(`${label}: search bar is above the date`, s.searchAboveDate);
+    check(`${label}: search bar is a direct child of the wrapper`, s.searchIsWrapChild);
+    check(`${label}: search bar is above the header`, s.searchAboveHeader);
     check(`${label}: search bar spans the content column`,
-      s.searchWidth && s.dateWidth && Math.abs(s.searchWidth - s.dateWidth) < 2,
-      `${s.searchWidth} vs ${s.dateWidth}`);
+      s.searchWidth && s.headerWidth && Math.abs(s.searchWidth - s.headerWidth) < 2,
+      `${s.searchWidth} vs ${s.headerWidth}`);
+    check(`${label}: search bar is hidden at rest`, s.searchOpacity === '0', s.searchOpacity);
+    check(`${label}: hidden search bar still reserves its height`, s.searchBoxHeight > 20,
+      s.searchBoxHeight);
+
+    // The point of hiding by opacity: hovering must reveal the bar without
+    // moving anything. Measured against the greeting, since that is what a
+    // collapse would visibly shove around.
+    const beforeHover = await page.evaluate(() =>
+      Math.round(document.querySelector('.hdr-row h1').getBoundingClientRect().top));
+    await page.hover('.page-wrap > header');
+    await page.waitForTimeout(300);
+    const afterHover = await page.evaluate(() => ({
+      opacity: getComputedStyle(document.querySelector('.hdr-search')).opacity,
+      greetingTop: Math.round(document.querySelector('.hdr-row h1').getBoundingClientRect().top),
+    }));
+    check(`${label}: hovering the header reveals the search bar`,
+      afterHover.opacity === '1', afterHover.opacity);
+    check(`${label}: revealing the bar does not move the greeting`,
+      afterHover.greetingTop === beforeHover, `${beforeHover} -> ${afterHover.greetingTop}`);
+
+    // Typing must not depend on the pointer staying put.
+    await page.focus('.hdr-search input');
+    await page.mouse.move(1400, 850);
+    await page.waitForTimeout(300);
+    const searchFocusOpacity = await page.evaluate(() =>
+      getComputedStyle(document.querySelector('.hdr-search')).opacity);
+    check(`${label}: focused search bar stays visible off-hover`,
+      searchFocusOpacity === '1', searchFocusOpacity);
+    await page.evaluate(() => document.querySelector('.hdr-search input').blur());
     check(`${label}: add button has no border`, transparent(s.addBorder), s.addBorder);
     check(`${label}: add button has no focus ring at rest`, s.addOutline === 'none', s.addOutline);
     check(`${label}: + glyph has no background`, transparent(s.plusBg), s.plusBg);

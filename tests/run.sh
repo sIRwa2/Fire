@@ -161,14 +161,33 @@ assert 'method="get"' in form, "search form is no longer a GET; the query would 
 assert 'type="search"' in search.group(1), "search input is no longer type=search"
 assert 'name="q"' in search.group(1), "search input lost name=q; the engine gets no query"
 assert 'aria-label=' in search.group(1), "search input has no accessible name"
-# It has to sit inside the header, above the date, or SEARCH_CSS's margin and
-# the placement the header was built around are both wrong.
-assert tpl.index('class="hdr-search"') > tpl.index("<header"), "search bar left the header"
+# It sits immediately above <header>, inside .page-wrap — that sibling
+# relationship is what the reveal selector keys on, so a move breaks the hover.
+assert tpl.index('class="hdr-search"') > tpl.index('class="page-wrap"'), \
+    "search bar left page-wrap; the reveal selector would never match"
+assert tpl.index('class="hdr-search"') < tpl.index("<header"), "search bar is not above the header"
 assert tpl.index('class="hdr-search"') < tpl.index("{{ dateStr }}"), "search bar is not above the date"
 assert ".hdr-search input{" in tpl, "search bar CSS missing"
+
+# Hidden until hovered, but the box has to stay: display:none or a height
+# collapse here would move the date and greeting on every hover.
+assert ".hdr-search{margin:0 0 14px;opacity:0" in tpl, \
+    "search bar is not hidden by opacity; the reveal would shift the header"
+assert "display:none" not in tpl.split(".hdr-search{")[1][:200], \
+    "search bar hidden with display:none, which does not reserve its height"
+assert ".page-wrap:has(> header:hover) .hdr-search" in tpl, \
+    "hovering the header no longer reveals the search bar"
+assert ".hdr-search:focus-within{opacity:1}" in tpl, \
+    "search bar would fade out while being typed in"
+assert "@supports not selector(:has(*)){.hdr-search{opacity:1}}" in tpl, \
+    "no :has() fallback; the bar would be unreachable on older Safari"
+# A touch device has no hover, so the bar must be exempted or it is invisible
+# and unreachable on a phone.
+touch = re.search(r"@media \(hover:none\)\{(.*?)\}", tpl, re.S).group(1)
+assert ".hdr-search," in touch, "search bar is not forced visible on touch"
 assert ".hdr-search input::-webkit-search-cancel-button{" in tpl, \
     "the native clear button is unstyled; WebKit hides it by default"
-print("ok    search bar above the date, native clear button styled")
+print("ok    search bar above the header, hover-revealed without shifting it")
 
 # A clean slate has to be genuinely empty: wiping stored config falls back to
 # these defaults, and componentDidMount persists them again on the next load.
