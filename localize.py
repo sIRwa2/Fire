@@ -752,6 +752,33 @@ URL_TITLE_PATCHES = tuple(
 )
 
 
+# ── The category delete is just the bin ─────────────────────────────────────
+# It read "🗑 DELETE" in 10px uppercase next to the category name. Two categories
+# per row on a phone leaves ~163px for name + grip + DELETE, which is what pushed
+# the header into wrapping in the first place; the word was the widest part of it.
+#
+# The bin alone says it, and the control keeps its accessible name — title="Delete
+# category" was already there, so nothing is lost to a screen reader or to a
+# hover. The padding was sized around the text (2px 7px 2px 5px, lopsided to sit
+# beside the word); with the word gone it is symmetric, and a touch larger than
+# the old height so the tap target does not shrink with the label.
+CAT_DELETE_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "drop the DELETE label, keep the bin",
+            "</svg>Delete",
+            "</svg>",
+        ),
+        (
+            "centre the bin in what the label used to occupy",
+            "padding:2px 7px 2px 5px;border-radius:5px;font-size:10px",
+            "padding:3px 5px;border-radius:5px;font-size:10px",
+        ),
+    )
+)
+
+
 # ── Enter commits the add/edit dialog ───────────────────────────────────────
 # Paste a URL, get a Title guessed from it, and the dialog is already complete —
 # so reaching for the mouse to press Add is the only thing left, and Enter should
@@ -1674,7 +1701,8 @@ def apply_js_patches(body: str) -> str:
                            + FONT_SIZE_PATCHES + MOBILE_PATCHES
                            # Last: its anchors are what JS_PATCHES and
                            # CLIPBOARD_PATCHES leave behind.
-                           + URL_TITLE_PATCHES + ENTER_SAVE_PATCHES):
+                           + URL_TITLE_PATCHES + ENTER_SAVE_PATCHES
+                           + CAT_DELETE_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))

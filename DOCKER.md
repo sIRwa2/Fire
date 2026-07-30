@@ -780,10 +780,19 @@ longer wraps into three lines and shoves the header buttons around.
 
 Two columns leaves each category about 163px wide, which surfaced a layout bug the
 five-column desktop had all along. The category header is a flex row of name, drag
-grip and DELETE, and every flex child defaults to `min-width:auto` — so the name
+grip and delete, and every flex child defaults to `min-width:auto` — so the name
 refuses to shrink below its longest word and pushes the controls out. A category
-called "Infrastructure & Monitoring" put DELETE 46px off-screen on a phone; on a
-1400px desktop the controls escaped the column too, hidden only by the page margin.
+called "Infrastructure & Monitoring" put the delete control 46px off-screen on a
+phone; on a 1400px desktop the controls escaped the column too, hidden only by the
+page margin.
+
+The delete control used to read "🗑 DELETE" in 10px uppercase, and that word was
+the widest thing in the row. It is now **the bin alone** — `title="Delete
+category"` was already on the element, so the control keeps its accessible name
+and its tooltip, and only the visible text is gone. Its padding was lopsided
+(`2px 7px 2px 5px`) to sit beside the word and is now symmetric. The knock-on
+effect is that a short category like "Dev" fits name, grip and bin on one line
+again where DELETE forced a wrap.
 
 The fix lets the header row wrap, so the name keeps the full column width and the
 controls drop to a second line only when they no longer fit beside it. Short names

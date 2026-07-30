@@ -352,7 +352,7 @@ assert '[data-mobile="icons"] .app-grid a[data-drag-id] > span[data-nodrag]{disp
 # Everything must sit inside the media query, or desktop changes too.
 assert "@media" in tpl[:tpl.index('[data-mobile="both"]')], "mobile rules escaped the media query"
 # Two columns is ~163px on a phone, narrow enough that a long category name
-# pushed the grip and DELETE out of the column. The header row has to wrap, and
+# pushed the grip and the delete control out of the column. The row has to wrap, and
 # the name has to be allowed to break — outside the media query, because five
 # desktop columns are narrower still.
 assert ".bm-cat > div:first-child{flex-wrap:wrap}" in tpl, \
@@ -361,6 +361,16 @@ assert ".bm-cat .cat-grip,.bm-cat .cat-del{flex:0 0 auto}" in tpl, \
     "the category controls can be squeezed"
 assert "overflow-wrap:anywhere" in tpl, "a single long word can still overflow the column"
 print("ok    responsive mobile layouts wired")
+
+# The category delete is the bin alone — the widest part of that header row was
+# the word DELETE. Losing the visible text is only safe because the control keeps
+# an accessible name, so the title is asserted alongside.
+cat_del = re.search(r'<span class="cat-del"(.*?)</span>', tpl, re.S).group(1)
+assert 'title="Delete category"' in cat_del, \
+    "the bin has no accessible name now that the label is gone"
+assert "<svg" in cat_del, "the bin icon is gone"
+assert "Delete<" not in tpl and ">Delete" not in tpl, "the DELETE label is still rendered"
+print("ok    category delete is the bin icon alone")
 
 # Swipe-to-reveal for the header buttons. Every part of this is a way for the
 # lock button to become unreachable, so the gating is asserted, not assumed.

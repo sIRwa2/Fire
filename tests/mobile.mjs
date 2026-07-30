@@ -96,9 +96,9 @@ const dflt = await open(build(null), devices['iPhone 13']);
 check('defaults to icon and text', (await probe(dflt)).mode === 'both');
 await dflt.close();
 
-// A long category name must not push the grip and DELETE out of its column. Two
+// A long category name must not push the grip and bin out of its column. Two
 // columns on a phone is ~163px, so the header row has to wrap rather than
-// overflow — it used to put DELETE 46px off-screen. Checked on desktop too,
+// overflow — it used to put the delete control 46px off-screen. Checked on desktop too,
 // where five columns are narrower still and only the page margin hid it.
 const long = build('both');
 long.v1.groups[0].name = 'Infrastructure & Monitoring';
