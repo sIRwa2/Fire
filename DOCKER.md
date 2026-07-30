@@ -402,13 +402,31 @@ Two details that are easy to get wrong:
 
 It fires from both entry points: the URL field itself, and the clipboard prefill
 when the dialog opens (see below) — so with a URL already copied, opening the
-dialog fills in both fields and the only thing left is the icon.
+dialog fills in the URL, the Title *and* the icon search, leaving one click on the
+icon and Enter.
 
-The suggested title deliberately does **not** filter the icon grid, for the same
-reason an icon-suggested one does not: `titleAuto` is set, so the title-fallback
-filter is skipped. To have a pasted URL pre-filter the icons instead, the
-suggestion would need to distinguish its own origin from the icon picker's rather
-than sharing one flag.
+The same label also **fills the icon search**, so the grid is already showing the
+icons worth choosing from — paste `http://gitea.lan` and the picker is down to the
+Gitea icon before you have touched anything.
+
+That is done by writing `m.q`, the search box itself, rather than by teaching the
+grid's title fallback to treat a URL-derived title differently. Three reasons:
+
+- The box visibly reads `gitea`, which is *why* the grid is filtered, and clearing
+  it brings everything back.
+- Picking an icon then leaves the grid exactly as it is. Filtering off the title
+  instead would unfilter the moment `titleAuto` flipped to the icon's own
+  suggestion — the grid would jump under the finger that just clicked it, which is
+  the glitch the title fallback already exists to avoid.
+- The grid's own expression needs no change at all.
+
+`qAuto` mirrors `titleAuto`: a search this dialog filled in, which a later URL
+replaces and a typed search takes over for good.
+
+The search is only filled when the label matches an icon that **exists**.
+Filtering to a label nothing matches would leave the picker empty, which is worse
+than showing everything — so `http://my-nas.lan` suggests the title "My Nas" and
+leaves the grid alone.
 
 ### Enter commits the dialog
 

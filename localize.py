@@ -580,6 +580,26 @@ CLIPBOARD_PATCHES = tuple(
 # Without that gate, typing a URL by hand would put G, Gi, Git into the Title
 # field on the way to Gitea. Clearing the URL clears a title that came from it,
 # so the dialog does not keep a guess for a URL that is no longer there.
+#
+# The same label also fills the icon search, so the grid is already showing the
+# icons worth choosing from. That is done by writing m.q — the search box the user
+# can see and clear — rather than by teaching the grid's title fallback to treat a
+# URL-derived title differently:
+#
+#   * the box shows "gitea", which is why the grid is filtered, and clearing it
+#     brings everything back;
+#   * picking an icon then leaves the grid exactly as it is. Filtering off the
+#     title instead would unfilter the moment titleAuto flipped to the icon's own
+#     suggestion, so the grid would jump under the finger that just clicked it —
+#     the glitch the title fallback already avoids for icon picks;
+#   * the grid's own expression needs no change at all.
+#
+# qAuto mirrors titleAuto: a search this dialog filled in, which a later URL
+# replaces and a typed search takes over for good.
+#
+# The search is only filled when the label matches an icon that exists. Filtering
+# to a label nothing matches would leave the picker empty, which is worse than
+# showing everything — so "my-nas" leaves the grid alone.
 URL_TITLE_PATCHES = tuple(
     (name, tpl(old), tpl(new))
     for name, old, new in (
@@ -592,20 +612,32 @@ URL_TITLE_PATCHES = tuple(
             """  fieldChange = (e) => {
     const f = e.currentTarget.dataset.field, v = e.currentTarget.value;
     this.setState(s => {
-      const m = { ...s.modal, [f]: v, ...(f === 'title' ? { titleAuto: false } : {}) };
-      if (f === 'url' && (!m.title.trim() || m.titleAuto)) {
-        const raw = v.trim();
-        if (!raw) {
-          if (m.titleAuto) m.title = '';
-        } else if (/^[a-z]+:\\/\\//i.test(raw) || /[.:]/.test(raw)) {
-          const guess = this.titleFromUrl(raw);
-          if (guess) { m.title = guess; m.titleAuto = true; }
-        }
-      }
-      return { modal: m };
+      const m = { ...s.modal, [f]: v,
+        ...(f === 'title' ? { titleAuto: false } : {}),
+        ...(f === 'q' ? { qAuto: false } : {}) };
+      return { modal: f === 'url' ? this.suggestFromUrl(m, v) : m };
     });
   };
-  titleFromUrl = (raw) => {
+  suggestFromUrl = (m, raw) => {
+    const url = (raw || '').trim();
+    // Wait for something host-shaped, or typing a URL by hand puts G, Gi, Git
+    // into the Title on the way to Gitea.
+    const ready = /^[a-z]+:\\/\\//i.test(url) || /[.:]/.test(url);
+    const label = ready ? this.labelFromUrl(url) : '';
+    if (!m.title.trim() || m.titleAuto) {
+      if (!url) { if (m.titleAuto) { m.title = ''; m.titleAuto = false; } }
+      else if (label) { m.title = this.titleFromUrl(url); m.titleAuto = true; }
+    }
+    if (!(m.q || '').trim() || m.qAuto) {
+      // Filtering to a label no icon matches would empty the picker, which is
+      // worse than showing everything.
+      const hit = !!label && (this.state.icons || []).some(n => n.includes(label));
+      if (!hit) { if (m.qAuto) { m.q = ''; m.qAuto = false; } }
+      else { m.q = label; m.qAuto = true; }
+    }
+    return m;
+  };
+  labelFromUrl = (raw) => {
     let url = (raw || '').trim();
     if (!url) return '';
     // Same normalisation saveModal uses, so a scheme-less paste still parses.
@@ -619,21 +651,17 @@ URL_TITLE_PATCHES = tuple(
     // Only a path segment can carry an extension; host labels hold no dots here.
     label = label.replace(/\\.[a-z0-9]{1,5}$/i, '');
     if (!label || /^\\d+$/.test(label)) return '';
-    return label.split(/[-_+.\\s]+/).filter(Boolean)
-      .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-  };""",
+    return label.toLowerCase();
+  };
+  titleFromUrl = (raw) => this.labelFromUrl(raw).split(/[-_+.\\s]+/).filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');""",
         ),
         (
             "a clipboard URL suggests a title as well",
             """      this.setState(s => (s.modal && !s.modal.url)
         ? { modal: { ...s.modal, url: text } } : null);""",
-            """      this.setState(s => {
-        if (!s.modal || s.modal.url) return null;
-        const guess = (!s.modal.title.trim() || s.modal.titleAuto)
-          ? this.titleFromUrl(text) : '';
-        return { modal: { ...s.modal, url: text,
-          ...(guess ? { title: guess, titleAuto: true } : {}) } };
-      });""",
+            """      this.setState(s => (s.modal && !s.modal.url)
+        ? { modal: this.suggestFromUrl({ ...s.modal, url: text }, text) } : null);""",
         ),
     )
 )

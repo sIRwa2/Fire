@@ -119,7 +119,48 @@ check('the bookmark saved with the guessed title',
   doc.v1.groups[0].bookmarks.length === 1 && doc.v1.groups[0].bookmarks[0].title === 'Plex',
   JSON.stringify(doc.v1.groups[0].bookmarks));
 
-// 7. Enter commits the dialog — the point of the paste flow: paste, Enter, done.
+// 7. The URL also pre-filters the icon grid, against the real icon set.
+await openAdd();
+const gridCount = () => page.locator(`${DIALOG} span[data-icon]`).count();
+const iconNames = () => page.evaluate((d) => [...document.querySelectorAll(d + ' span[data-icon]')]
+  .map(s => s.dataset.icon), DIALOG);
+const unfiltered = await gridCount();
+check('the grid starts unfiltered', unfiltered > 0, unfiltered);
+await page.locator(`${DIALOG} input[data-field="url"]`).fill('http://gitea.lan');
+await page.waitForTimeout(400);
+const filtered = await iconNames();
+check('pasting a URL filters the icon grid', filtered.length > 0 && filtered.length < unfiltered,
+  `${filtered.length} of ${unfiltered}`);
+check('every icon shown matches the host', filtered.every(n => n.includes('gitea')),
+  filtered.slice(0, 5).join(','));
+check('the search box shows what it filtered by',
+  (await fields()).q === 'gitea', JSON.stringify(await fields()));
+
+// Picking from the filtered grid must not make it jump back to everything.
+await page.locator(`${DIALOG} span[data-icon]`).first().click();
+await page.waitForTimeout(400);
+check('picking an icon leaves the grid filtered',
+  (await iconNames()).length === filtered.length, await gridCount());
+check('the picked icon is selected',
+  (await fields()).title.toLowerCase().includes('gitea'), JSON.stringify(await fields()));
+
+// Clearing the search brings everything back.
+await page.locator(`${DIALOG} input[data-field="q"]`).fill('');
+await page.waitForTimeout(400);
+check('clearing the search restores the full grid', await gridCount() === unfiltered,
+  await gridCount());
+await closeDialog();
+
+// A URL nothing matches must leave the grid alone rather than empty it.
+await openAdd();
+await page.locator(`${DIALOG} input[data-field="url"]`).fill('http://zzzznotathing.lan');
+await page.waitForTimeout(400);
+check('an unmatched host leaves the grid full', await gridCount() === unfiltered, await gridCount());
+check('but the title is still guessed',
+  (await fields()).title === 'Zzzznotathing', JSON.stringify(await fields()));
+await closeDialog();
+
+// 8. Enter commits the dialog — the point of the paste flow: paste, Enter, done.
 await openAdd();
 await page.locator(`${DIALOG} input[data-field="url"]`).fill('http://grafana.lan');
 await page.waitForTimeout(350);
@@ -186,7 +227,7 @@ check('Enter in the settings panel saves nothing', doc.v1.apps.length === 4,
   JSON.stringify(doc.v1.apps.map(a => a.title)));
 await closeDialog();
 
-// 8. Editing an existing entry must not have its title rewritten under it.
+// 9. Editing an existing entry must not have its title rewritten under it.
 await page.hover('.app-grid a[data-drag-id]');
 await page.waitForTimeout(250);
 await page.locator('.app-grid a[data-drag-id] span[data-nodrag] span').first().click();

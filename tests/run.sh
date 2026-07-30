@@ -399,18 +399,29 @@ assert "icon.replace(/\\.(svg|webp|png)$/i, '')" in tpl, \
     "the title suggestion would keep the file extension"
 # The URL suggests a title too, sharing titleAuto with the icon suggestion so the
 # two cooperate instead of fighting. Both entry points must reach the same helper.
-assert "titleFromUrl = (raw) => {" in tpl, "no URL -> title helper"
-assert "const guess = this.titleFromUrl(raw);" in tpl, \
-    "the URL field does not suggest a title"
-assert "? this.titleFromUrl(text) : '';" in tpl, \
-    "a clipboard-prefilled URL does not suggest a title"
-# The guess must stay a suggestion: it only writes when the field is empty or the
-# title is one this dialog put there.
-assert "if (f === 'url' && (!m.title.trim() || m.titleAuto)) {" in tpl, \
+assert "labelFromUrl = (raw) => {" in tpl, "no URL -> label helper"
+assert "titleFromUrl = (raw) => this.labelFromUrl(raw)" in tpl, "no URL -> title helper"
+# Both entry points — the URL field and the clipboard prefill — go through the
+# same suggestion, so they cannot drift apart.
+assert "modal: f === 'url' ? this.suggestFromUrl(m, v) : m" in tpl, \
+    "the URL field does not suggest anything"
+assert "modal: this.suggestFromUrl({ ...s.modal, url: text }, text) }" in tpl, \
+    "a clipboard-prefilled URL does not suggest anything"
+# Both stay suggestions: they only write when the field is empty or holds a value
+# this dialog put there.
+assert "if (!m.title.trim() || m.titleAuto) {" in tpl, \
     "a URL could overwrite a title the user typed"
+assert "if (!(m.q || '').trim() || m.qAuto) {" in tpl, \
+    "a URL could overwrite a search the user typed"
 # Without the host-shaped gate, typing a URL dribbles G, Gi, Git into the field.
-assert "/^[a-z]+:\\/\\//i.test(raw) || /[.:]/.test(raw)" in tpl, \
+assert "/^[a-z]+:\\/\\//i.test(url) || /[.:]/.test(url)" in tpl, \
     "the URL guess would fire on every keystroke"
+# Filtering to a label nothing matches would leave the icon picker empty.
+assert "(this.state.icons || []).some(n => n.includes(label))" in tpl, \
+    "the grid could be filtered down to nothing"
+# The grid filters off m.q, which is why picking an icon does not unfilter it.
+assert "const q = (m.q || (m.titleAuto ? '' : m.title) || '').trim().toLowerCase();" in tpl, \
+    "the grid's filter expression changed; the URL pre-filter rides on m.q"
 # Enter commits the dialog, off the same window handler that owns Escape. Both
 # guards are load-bearing: without the modal check, Enter is swallowed page-wide
 # and a focused app link can no longer be activated from the keyboard; without the

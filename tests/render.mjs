@@ -121,7 +121,8 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
         addOutline: cs('.add-app', 'outlineStyle'),
         plusBg: plus && getComputedStyle(plus).backgroundColor,
         addOpacity: cs('.add-app', 'opacity'),
-        cardMargin: cs('.app-grid > a[data-drag-id]', 'marginBottom'),
+        cardPadding: cs('.app-grid > a[data-drag-id]', 'padding'),
+        cardMarginX: cs('.app-grid > a[data-drag-id]', 'marginLeft'),
         appTarget: document.querySelector('.app-grid a[data-drag-id]')?.target,
         bmTarget: document.querySelector('.bm-cat a[data-drag-id]')?.target,
         sheets: [...document.querySelectorAll('style')].length,
@@ -208,9 +209,13 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     check(`${label}: {{ }} placeholders absorbed (needs nginx's empty_gif rule)`,
       placeholders.length === 0, placeholders[0]);
     if (populated) {
-      // The cards are flush — their inline padding is overridden to 0 on all
-      // sides — so this margin is the only thing separating rows beyond the gap.
-      check(`${label}: cards have a bottom margin`, s.cardMargin === '14px', s.cardMargin);
+      // The cards' inline padding is overridden to 0 on all sides, which left the
+      // hover highlight flush against the content; CARD_MARGIN_CSS puts it back,
+      // with an equal negative side margin so nothing shifts. Measured here in a
+      // real browser because both halves have to survive the cascade together.
+      check(`${label}: cards are padded`, s.cardPadding === '9px 12px', s.cardPadding);
+      check(`${label}: the side bleed cancels the padding`,
+        s.cardMarginX === '-12px', s.cardMarginX);
       // Apps and bookmarks must agree on the link target, whichever it is.
       check(`${label}: link target is consistent and set`,
         s.appTarget === s.bmTarget && ['_blank', '_self'].includes(s.appTarget),

@@ -9,27 +9,38 @@ import fs from 'node:fs';
 const built = process.argv[2];
 const tpl = fs.readFileSync(built, 'utf8');
 
+// Block-bodied handlers end at "\n  };"; titleFromUrl is a one-expression arrow
+// spanning two lines, so it ends at the first ";" that closes the statement.
 const grab = (name, arg = 'e') =>
   new RegExp('  ' + name + ' = (\\(' + arg + '\\) => \\{[\\s\\S]*?\\n  \\});').exec(tpl)[1];
+const grabExpr = (name, arg) =>
+  new RegExp('  ' + name + ' = (\\(' + arg + '\\) => [^;]*);').exec(tpl)[1];
 
 // The handlers are class-property arrows, so they close over `this` lexically.
 // Calling the factory with .call(ctx) makes that captured `this` the stub.
 const factory = new Function(
   `return { pickIcon: ${grab('pickIcon')}, fieldChange: ${grab('fieldChange')},` +
-  ` titleFromUrl: ${grab('titleFromUrl', 'raw')} };`
+  ` suggestFromUrl: ${grab('suggestFromUrl', 'm, raw')},` +
+  ` labelFromUrl: ${grab('labelFromUrl', 'raw')},` +
+  ` titleFromUrl: ${grabExpr('titleFromUrl', 'raw')} };`
 );
 
-function session(modal) {
+// Enough of the real icon set to exercise "only filter to something that exists".
+const ICONS = ['gitea', 'grafana', 'plex', 'jellyfin', 'nginx', 'home-assistant',
+  'gitea-light', 'portainer', 'proxmox', 'synthtopia'];
+
+function session(modal, icons = ICONS) {
   const ctx = {
-    state: { modal: { icon: '', title: '', desc: '', url: '', q: '', ...modal } },
+    state: { icons, modal: { icon: '', title: '', desc: '', url: '', q: '', ...modal } },
     setState(u) {
       Object.assign(ctx.state, typeof u === 'function' ? u(ctx.state) : u);
     },
   };
   const h = factory.call(ctx);
-  // fieldChange calls this.titleFromUrl, and the arrows captured `this` as ctx —
-  // so the helper has to hang off ctx, not just off the returned object.
-  ctx.titleFromUrl = h.titleFromUrl;
+  // fieldChange calls this.suggestFromUrl, which calls the other two, and the
+  // arrows captured `this` as ctx — so they have to hang off ctx, not just off
+  // the object the factory returns.
+  Object.assign(ctx, h);
   return {
     pick: (icon) => h.pickIcon({ currentTarget: { dataset: { icon } } }),
     type: (field, value) =>
@@ -172,10 +183,53 @@ iconThenUrl.type('url', 'http://gitea.lan');
 check('a later URL refines the icon guess',
   iconThenUrl.modal.title === 'Gitea', iconThenUrl.modal.title);
 
-// A URL-suggested title must not collapse the icon grid either.
+// 8. the URL also pre-filters the icon grid, by filling the search box
 const urlBrowse = session();
 urlBrowse.type('url', 'http://gitea.lan');
-check('a URL guess leaves the grid unfiltered', q(urlBrowse.modal) === '', q(urlBrowse.modal));
+check('a URL pre-filters the grid', q(urlBrowse.modal) === 'gitea', q(urlBrowse.modal));
+check('and the search box shows why', urlBrowse.modal.q === 'gitea', urlBrowse.modal.q);
+
+// Picking from that filtered grid must leave it exactly as it is — the search
+// box is what filters, so the title flipping to the icon's own guess changes
+// nothing.
+const stable = session();
+stable.type('url', 'http://gitea.lan');
+stable.pick('gitea-light');
+check('picking an icon does not unfilter the grid', q(stable.modal) === 'gitea', q(stable.modal));
+check('and the icon still suggests the title', stable.modal.title === 'Gitea', stable.modal.title);
+
+// A label no icon matches must leave the grid alone rather than empty it.
+const nohit = session();
+nohit.type('url', 'http://my-nas.lan');
+check('an unmatched label does not filter', q(nohit.modal) === '', q(nohit.modal));
+check('but it still suggests the title', nohit.modal.title === 'My Nas', nohit.modal.title);
+
+// A search the user typed is theirs.
+const typedSearch = session();
+typedSearch.type('q', 'jelly');
+typedSearch.type('url', 'http://gitea.lan');
+check('a typed search survives a URL', typedSearch.modal.q === 'jelly', typedSearch.modal.q);
+check('the title is still suggested', typedSearch.modal.title === 'Gitea', typedSearch.modal.title);
+
+// A later URL replaces a search this dialog filled in.
+const refilter = session();
+refilter.type('url', 'http://gitea.lan');
+refilter.type('url', 'http://grafana.lan');
+check('a changed URL re-filters the grid', refilter.modal.q === 'grafana', refilter.modal.q);
+const unfilter = session();
+unfilter.type('url', 'http://gitea.lan');
+unfilter.type('url', 'http://my-nas.lan');
+check('a URL matching nothing clears the old filter', unfilter.modal.q === '', unfilter.modal.q);
+const cleared2 = session();
+cleared2.type('url', 'http://gitea.lan');
+cleared2.type('url', '');
+check('clearing the URL clears the filter', cleared2.modal.q === '', cleared2.modal.q);
+
+// With no icons loaded yet, nothing matches and the grid is left alone.
+const noIcons = session(undefined, []);
+noIcons.type('url', 'http://gitea.lan');
+check('no icon list means no filter', noIcons.modal.q === '', noIcons.modal.q);
+check('the title is suggested regardless', noIcons.modal.title === 'Gitea', noIcons.modal.title);
 
 // Junk in must not throw.
 for (const junk of ['', '   ', 'http://', 'https://.', 'not a url', '::::', 'http://%zz.lan']) {
