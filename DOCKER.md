@@ -432,11 +432,13 @@ leaves the grid alone.
 
 The icon is attached as well, so paste-then-Enter stores a complete entry. This is
 the one place where taking "the first match" would be actively wrong, because the
-grid matches **substrings**:
+grid matches **substrings** — and until the results were ranked (below), the first
+match was rarely the right one:
 
-| pasted | grid leads with | attached |
+| pasted | alphabetically first match | attached |
 | --- | --- | --- |
 | `http://plex.lan` | `perplexity-dark` | `plex` |
+| `https://www.reddit.com/` | `libreddit-light` | `reddit` |
 | `http://nginx.lan` | `nginx-proxy-manager` | `nginx` |
 | `http://jellyfin.lan` | `jellyfin-vue` | `jellyfin` |
 | `http://ha.lan` | `2dehands` (101 matches) | *(nothing)* |
@@ -451,6 +453,25 @@ already for. `http://synthtopia.com` still ends up with a fetched favicon.
 `pickIcon` clears the flag and no later URL will replace that icon. An
 auto-attached one is replaced when the URL changes, and dropped when the new URL
 matches nothing — never left pointing at the previous host's app.
+
+### Ranked results
+
+The grid was left in the icon list's own alphabetical order, which put the icon you
+asked for well down the list whenever a longer name contained it. Pasting
+`https://www.reddit.com/` attached `reddit` correctly but showed `libreddit-light`
+and `libreddit` first, so the picker read as though it favoured libreddit.
+
+Results are now ranked: **exact name, then names starting with the query, then the
+rest**. `Array#sort` is stable, so each band keeps its alphabetical order, and only
+the filtered copy is sorted — `s.icons` itself is never mutated.
+
+| search | before | after |
+| --- | --- | --- |
+| `reddit` | libreddit-light, libreddit, **reddit** | **reddit**, libreddit-light, libreddit |
+| `plex` | perplexity-dark, …4 more…, **plex** | **plex**, plex-alt-light, plex-alt |
+| `git` | gitam-university, gitbook, … | **git**, gitam-university, gitbook |
+
+This applies to typing in the search box as well, not just to a pasted URL.
 
 Which icon is attached is shown twice: the grid tile is **outlined in the accent**,
 and the dialog's icon field gets the same outline, so the two read as one state

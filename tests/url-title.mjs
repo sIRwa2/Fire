@@ -135,18 +135,6 @@ check('every icon shown matches the host', filtered.every(n => n.includes('gitea
   filtered.slice(0, 5).join(','));
 check('the search box shows what it filtered by',
   (await fields()).q === 'gitea', JSON.stringify(await fields()));
-// The icon is selected too, so Enter alone stores a complete entry. The dialog's
-// preview tile is what shows which one — the grid's selected-tile highlight is
-// suppressed by ICON_TILE_CSS, which flattens every tile.
-const preview = () => page.evaluate((d) => {
-  const img = document.querySelector(d + ' img');
-  return img ? img.getAttribute('src') : null;
-}, DIALOG);
-check('the matching icon is selected', await preview() === '/icons/gitea.svg', await preview());
-
-// Both the grid tile and the icon field are outlined, so it is visible which one
-// is attached. The tiles are otherwise flattened, so an accent border is the
-// whole signal.
 const outlines = () => page.evaluate((d) => {
   const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim();
   const rgb = (el) => el ? getComputedStyle(el).borderTopColor : null;
@@ -162,18 +150,40 @@ const outlines = () => page.evaluate((d) => {
     outlined: tiles.filter(t => toHex(rgb(t)) === accent.toLowerCase()).map(t => t.dataset.icon),
   };
 }, DIALOG);
+// The icon is selected too, so Enter alone stores a complete entry. The dialog's
+// preview tile is what shows which one — the grid's selected-tile highlight is
+// suppressed by ICON_TILE_CSS, which flattens every tile.
+const preview = () => page.evaluate((d) => {
+  const img = document.querySelector(d + ' img');
+  return img ? img.getAttribute('src') : null;
+}, DIALOG);
+check('the matching icon is selected', await preview() === '/icons/gitea.svg', await preview());
+
+// Both the grid tile and the icon field are outlined, so it is visible which one
+// is attached. The tiles are otherwise flattened, so an accent border is the
+// whole signal.
 let o = await outlines();
 check('the chosen tile is outlined in the accent', o.outlined.join(',') === 'gitea', JSON.stringify(o));
 check('the icon field is outlined too', o.field === o.accent, JSON.stringify(o));
 check('exactly one tile is outlined', o.outlined.length === 1, JSON.stringify(o));
 
-// The trap this must not fall into: the grid matches substrings, so for "plex"
-// the first tile shown is perplexity-dark. Only an exact name may be attached.
-await page.locator(`${DIALOG} input[data-field="url"]`).fill('http://plex.lan');
-await page.waitForTimeout(400);
-const shown = await iconNames();
-check('the grid leads with a substring match', shown[0] !== 'plex', shown.slice(0, 3).join(','));
-check('but the exact icon is the one selected', await preview() === '/icons/plex.svg', await preview());
+// The grid matches substrings, so left alphabetical the icon you asked for sinks:
+// "plex" behind five perplexity variants, "reddit" behind two libreddit ones.
+// Ranked, the exact match leads — and it is the one attached.
+for (const [url, want, buriedBy] of [
+  ['http://plex.lan', 'plex', 'perplexity'],
+  ['https://www.reddit.com/', 'reddit', 'libreddit'],
+  ['http://nginx.lan', 'nginx', 'nginx-proxy-manager'],
+]) {
+  await page.locator(`${DIALOG} input[data-field="url"]`).fill(url);
+  await page.waitForTimeout(400);
+  const shown = await iconNames();
+  check(`${want} leads the grid, not ${buriedBy}`, shown[0] === want, shown.slice(0, 3).join(','));
+  check(`and ${want} is the icon attached`,
+    await preview() === `/icons/${want}.svg`, await preview());
+  check(`and ${want} is the outlined tile`,
+    (await outlines()).outlined.join(',') === want, JSON.stringify(await outlines()));
+}
 await page.locator(`${DIALOG} input[data-field="url"]`).fill('http://gitea.lan');
 await page.waitForTimeout(400);
 

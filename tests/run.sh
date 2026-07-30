@@ -432,6 +432,14 @@ assert "titleAuto: suggest, iconAuto: false } };" in tpl, \
 # The grid filters off m.q, which is why picking an icon does not unfilter it.
 assert "const q = (m.q || (m.titleAuto ? '' : m.title) || '').trim().toLowerCase();" in tpl, \
     "the grid's filter expression changed; the URL pre-filter rides on m.q"
+# Matches are substrings, so left alphabetical the icon asked for sinks: reddit
+# behind libreddit, plex behind five perplexity variants. Exact first, then
+# prefix, then the rest — and only the filtered copy is sorted, never s.icons.
+assert "const rank = (n) => stem(n) === q ? 0 : stem(n).startsWith(q) ? 1 : 2;" in tpl, \
+    "icon matches are not ranked, so an exact match can sit below substring ones"
+assert "s.icons.filter(n => n.includes(q)).sort((a, b) => rank(a) - rank(b))" in tpl, \
+    "the ranked order is not applied to the grid"
+assert "s.icons.sort" not in tpl, "sorting s.icons in place would mutate state"
 # Enter commits the dialog, off the same window handler that owns Escape. Both
 # guards are load-bearing: without the modal check, Enter is swallowed page-wide
 # and a focused app link can no longer be activated from the keyboard; without the

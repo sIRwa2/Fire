@@ -681,6 +681,26 @@ URL_TITLE_PATCHES = tuple(
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');""",
         ),
         (
+            # The grid matches substrings and was then left in alphabetical order,
+            # so the icon you actually asked for could sit well down the list:
+            # "reddit" led with libreddit-light and libreddit, "plex" with five
+            # perplexity variants, "nginx" with nginx-proxy-manager. The right
+            # icon was attached — the outline showed it — but the grid still read
+            # as if it favoured the other one.
+            #
+            # Rank instead of reorder-by-name: exact match, then names starting
+            # with the query, then the rest. Array#sort is stable, so each band
+            # keeps its alphabetical order. Only the filtered copy is sorted;
+            # s.icons itself is never touched.
+            "rank the icon matches instead of leaving them alphabetical",
+            "      const pool = q ? s.icons.filter(n => n.includes(q)) : s.icons;",
+            "      const stem = (n) => n.replace(/\\.(svg|webp|png)$/i, '');\n"
+            "      const rank = (n) => stem(n) === q ? 0 : stem(n).startsWith(q) ? 1 : 2;\n"
+            "      const pool = q"
+            " ? s.icons.filter(n => n.includes(q)).sort((a, b) => rank(a) - rank(b))"
+            " : s.icons;",
+        ),
+        (
             # Nothing in the markup distinguished the selected tile, so the CSS
             # had nothing to hook. ic.border already knows which one it is.
             "mark the selected tile so it can be outlined",
