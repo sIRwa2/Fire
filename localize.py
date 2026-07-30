@@ -26,6 +26,7 @@ changes these strings, the build fails loudly instead of silently shipping a
 page that phones home.
 """
 
+import base64
 import json
 import os
 import re
@@ -794,6 +795,32 @@ LINK_TARGET_PATCHES = tuple(
 )
 
 
+# ── The placeholder icon that never existed ─────────────────────────────────
+# saveModal stores `icon: m.icon || 'homepage'` when nothing was picked, but there
+# is no homepage.svg — not in svg/, not among the 24 icons the bundle baked in, and
+# not even in the picker's own list. It is a phantom, so every icon-less entry
+# requested /icons/homepage.svg and got a 404 and a broken image. That predates the
+# containerisation: the original CDN fallback would have 404'd too.
+#
+# The sentinel is kept rather than renamed, because existing configs already store
+# it — mapping it here repairs them instead of leaving them broken. It resolves to
+# an inline data: URI, so it cannot 404, needs no network, and is covered by the
+# CSP's img-src data:.
+#
+# It is only ever on screen briefly: the site-icon lookup replaces it, and that now
+# always returns something. But "briefly" is not "never" when the service is
+# unreachable.
+PLACEHOLDER_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+    '<rect width="64" height="64" rx="14" fill="#3a414d"/>'
+    '<circle cx="32" cy="32" r="15" fill="none" stroke="#9aa3ad" stroke-width="3"/>'
+    '<path d="M17 32h30M32 17c7 8 7 22 0 30M32 17c-7 8-7 22 0 30" fill="none"'
+    ' stroke="#9aa3ad" stroke-width="3"/></svg>'
+)
+PLACEHOLDER_URI = "data:image/svg+xml;base64," + base64.b64encode(
+    PLACEHOLDER_SVG.encode("utf-8")
+).decode("ascii")
+
 # ── Falling back to the site's own icon ─────────────────────────────────────
 # Saving without picking an icon used to store 'homepage', a generic glyph. Now
 # the service is asked for the site's own icon and the entry is updated when it
@@ -810,9 +837,10 @@ FAVICON_PATCHES = tuple(
     (name, tpl(old), tpl(new))
     for name, old, new in (
         (
-            "resolve a fetched site icon",
+            "resolve a fetched site icon, and the phantom placeholder",
             "    return '/icons/' + name",
             "    if (name.slice(0, 4) === 'fav:') return '/favicons/' + name.slice(4);\n"
+            "    if (name === 'homepage') return '" + PLACEHOLDER_URI + "';\n"
             "    return '/icons/' + name",
         ),
         (
@@ -1114,14 +1142,24 @@ FONT_SIZE_CSS = (
 
 
 def _font_size_rows():
-    """One label-and-number-input row per size, in the panel's input style."""
+    """One label-and-number-input row per size, in the panel's input style.
+
+    defaultValue, not value. A controlled input plus a handler that refuses
+    out-of-range numbers means React re-renders the old value on every keystroke,
+    so the field cannot be typed into at all — clearing it snaps back, and "2"
+    then "4" never becomes 24. Only the spinner arrows worked, 0.5 at a time.
+    Uncontrolled lets typing through and still commits each valid value on change.
+    The panel is rebuilt from the theme whenever it opens, so the field is always
+    correct on the way in.
+    """
     out = []
     for key, _prop, _default, label in FONT_SIZES:
         out.append(
             '        <div style="display:flex;align-items:center;'
             'justify-content:space-between;gap:12px;margin-bottom:9px">\n'
             '          <span style="font-size:13px;color:#9aa3ad">' + label + "</span>\n"
-            '          <input type="number" data-k="' + key + '" value="{{ ' + key + ' }}"'
+            '          <input type="number" data-k="' + key + '"'
+            ' sc-camel-default-value="{{ ' + key + ' }}"'
             ' min="8" max="40" step="0.5" sc-camel-on-change="{{ fontSize }}"'
             ' style="width:74px;flex:none;background:rgba(255,255,255,.05);'
             "border:1px solid rgba(255,255,255,.15);border-radius:7px;padding:6px 8px;"

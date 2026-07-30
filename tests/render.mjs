@@ -41,14 +41,19 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
   for (const populated of [false, true]) {
     const label = `${engine}/${populated ? 'populated' : 'empty'}`;
     const page = await browser.newPage({ viewport: { width: 1504, height: 900 } });
-    const external = [], broken = [];
+    const external = [], broken = [], placeholders = [];
     page.on('request', (r) => {
       const host = new URL(r.url()).host;
       if (host && host !== new URL(base).host) external.push(r.url());
     });
     page.on('response', (r) => {
-      // The dc-runtime's un-hydrated {{ }} placeholders are absorbed by nginx.
-      if (r.status() >= 400) broken.push(`${r.status()} ${decodeURIComponent(r.url())}`);
+      if (r.status() < 400) return;
+      const url = decodeURIComponent(r.url());
+      // The dc-runtime's un-hydrated {{ }} placeholders are fetched by the browser
+      // while parsing and absorbed by nginx's empty_gif rule. Bucketed separately
+      // so a plain static server reports the missing rule rather than looking like
+      // a broken page.
+      (url.includes('{{') ? placeholders : broken).push(`${r.status()} ${url}`);
     });
     // Serve the config from the test rather than the real store: deterministic
     // regardless of what the dashboard currently holds, and it never reads or
@@ -200,6 +205,8 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     await page.waitForTimeout(400);
     check(`${label}: no external requests`, external.length === 0, external[0]);
     check(`${label}: no failed requests`, broken.length === 0, broken[0]);
+    check(`${label}: {{ }} placeholders absorbed (needs nginx's empty_gif rule)`,
+      placeholders.length === 0, placeholders[0]);
     if (populated) {
       // The cards are flush — their inline padding is overridden to 0 on all
       // sides — so this margin is the only thing separating rows beyond the gap.

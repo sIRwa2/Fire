@@ -502,6 +502,15 @@ them out of the icon picker, which enumerates the icon directories.
 The placeholder is only replaced if it is *still* the placeholder, so an icon
 chosen while the fetch was in flight wins.
 
+**That placeholder never existed.** `saveModal` stores `icon: 'homepage'` when
+nothing was picked, but there is no `homepage.svg` — not in `svg/`, not among the
+24 icons the bundle baked in, not even in the picker's own list. Every icon-less
+entry requested `/icons/homepage.svg` and got a 404 and a broken image, which
+predates the containerisation: the original CDN fallback would have 404'd too. The
+sentinel is kept rather than renamed, since existing configs already store it, and
+`iconUrl` resolves it to an inline `data:` URI — so it cannot 404, needs no
+network, and is covered by the CSP's `img-src data:`.
+
 This is the second thing in the stack that reaches the network, and it will
 request whatever URL you save. See the README's risks section.
 

@@ -96,6 +96,32 @@ const afterReset = JSON.parse(sync('GET', '/config').text);
 check('reset() empties the server document', Object.keys(afterReset.data).length === 0, JSON.stringify(afterReset));
 check('reset() reloads the page', win2.__reloaded === true);
 
+// 6b. A value that is not JSON must not silently drop the pending change. The app
+// always writes JSON, but these keys are reachable from a console, and the bug
+// pinned here was a lost write with no warning: flush() cleared its dirty flag
+// before serialising, so a snapshot that threw discarded the edit for good.
+const winJunk = { ...win, localStorage: new Storage(), window: null };
+winJunk.window = winJunk;
+winJunk.location = mkLocation(winJunk);
+sync('DELETE', '/config');
+sync('PUT', '/config', JSON.stringify({ data: { v1: { apps: [{ id: 'keep' }] } } }));
+run(winJunk);
+const beforeJunk = JSON.parse(sync('GET', '/config').text).data;
+winJunk.localStorage.setItem('fireHome.v1', '{{{ not json');
+winJunk.localStorage.setItem('fireHome.theme', JSON.stringify({ accent: '#ffffff' }));
+await sleep(900);
+// This one holds either way — a snapshot that throws sends nothing at all, so the
+// store is never clobbered. It is the invariant, not the regression pin.
+check('a non-JSON value does not wipe the stored config',
+  JSON.stringify(JSON.parse(sync('GET', '/config').text).data) === JSON.stringify(beforeJunk),
+  sync('GET', '/config').text);
+// This is the pin. With the old ordering `dirty` was cleared before serialising,
+// so the shim went quiet permanently: every later flush threw on the same junk and
+// nothing was ever sent or reported.
+check('the failure is surfaced, not swallowed',
+  /could not prepare the save/.test(winJunk.document.documentElement._c?.textContent || ''),
+  winJunk.document.documentElement._c?.textContent);
+
 // 7. server down at load -> degraded, falls through to real localStorage
 const winDown = { ...win, localStorage: new Storage(), window: null };
 winDown.window = winDown;

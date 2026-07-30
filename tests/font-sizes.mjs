@@ -66,11 +66,17 @@ const openSettings = async () => {
   await p.hover('.hdr-row'); await p.waitForTimeout(200);
   await p.click('.hdr-actions button[title="Settings"]'); await p.waitForTimeout(600);
 };
+// Types the value a character at a time rather than using fill(). fill() sets the
+// whole value in one shot and never passes through an intermediate state, which is
+// exactly how these fields once passed their tests while being untypeable: a
+// controlled input plus a handler that rejects out-of-range numbers meant React
+// reverted every keystroke.
 const setSize = async (key, value) => {
   await openSettings();
   const input = p.locator(`input[data-k="${key}"]`);
-  await input.fill(String(value));
-  await input.dispatchEvent('change');
+  await input.click({ clickCount: 3 });
+  await p.keyboard.press('Backspace');
+  await p.keyboard.type(String(value), { delay: 40 });
   await p.waitForTimeout(400);
   await p.keyboard.press('Escape');
   await p.waitForTimeout(350);
@@ -122,9 +128,14 @@ check('sizes survive a reload', reloaded.appsHeading === 26 && reloaded.appTitle
   && reloaded.appDesc === 9 && reloaded.catName === 22 && reloaded.bmTitle === 18,
   JSON.stringify(reloaded));
 
-// Out-of-range input must be ignored, not applied.
-await setSize('fsSection', 200);
-check('an out-of-range size is rejected', (await sizes()).appsHeading === 26, (await sizes()).appsHeading);
+// Out-of-range input must be ignored. "50" is used rather than "200" because
+// typing commits each valid value as it goes, and "200" passes through "20" —
+// which is in range, so it legitimately applies before the final digit lands.
+// Every prefix of "50" is out of range, so nothing should commit.
+const beforeBad = (await sizes()).appsHeading;
+await setSize('fsSection', 50);
+check('an out-of-range size is rejected', (await sizes()).appsHeading === beforeBad,
+  `${beforeBad} -> ${(await sizes()).appsHeading}`);
 
 console.log('page errors:', errs.length ? errs.slice(0, 2) : 'none');
 console.log(fail ? `\n${fail} failed` : '\nall good');

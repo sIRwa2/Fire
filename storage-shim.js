@@ -93,9 +93,18 @@
   function flush() {
     timer = null;
     if (inflight || !dirty) return;
-    dirty = false;
+    // Build the body before clearing the flag. Clearing first meant a snapshot
+    // that threw — JSON.parse of a value someone else wrote into these keys —
+    // dropped the pending change silently and never retried it. Leaving `dirty`
+    // set keeps it queued for the next attempt, and the banner says so.
     var body;
-    try { body = JSON.stringify(snapshot()); } catch (e) { return; }
+    try {
+      body = JSON.stringify(snapshot());
+    } catch (e) {
+      banner('firehome: could not prepare the save (' + (e && e.message) + ').');
+      return;
+    }
+    dirty = false;
     inflight = true;
     fetch(API, {
       method: 'PUT',
