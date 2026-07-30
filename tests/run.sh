@@ -397,6 +397,20 @@ assert "/\\.(svg|webp|png)$/i.test(name) ? '' : '.svg'" in tpl, \
     "iconUrl would append .svg to a raster name"
 assert "icon.replace(/\\.(svg|webp|png)$/i, '')" in tpl, \
     "the title suggestion would keep the file extension"
+# The URL suggests a title too, sharing titleAuto with the icon suggestion so the
+# two cooperate instead of fighting. Both entry points must reach the same helper.
+assert "titleFromUrl = (raw) => {" in tpl, "no URL -> title helper"
+assert "const guess = this.titleFromUrl(raw);" in tpl, \
+    "the URL field does not suggest a title"
+assert "? this.titleFromUrl(text) : '';" in tpl, \
+    "a clipboard-prefilled URL does not suggest a title"
+# The guess must stay a suggestion: it only writes when the field is empty or the
+# title is one this dialog put there.
+assert "if (f === 'url' && (!m.title.trim() || m.titleAuto)) {" in tpl, \
+    "a URL could overwrite a title the user typed"
+# Without the host-shaped gate, typing a URL dribbles G, Gi, Git into the field.
+assert "/^[a-z]+:\\/\\//i.test(raw) || /[.:]/.test(raw)" in tpl, \
+    "the URL guess would fire on every keystroke"
 # The baked list must survive as the fallback for when the service is unreachable.
 assert 'id="__icons_data"' in tpl, "baked icon list is gone; nothing to fall back to"
 print("ok    icon list served from the api, update button wired")

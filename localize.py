@@ -552,6 +552,93 @@ CLIPBOARD_PATCHES = tuple(
 )
 
 
+# ── Guessing the Title from the URL ─────────────────────────────────────────
+# Picking an icon already suggests a Title (JS_PATCHES). This adds the other
+# direction, which is the one that fires first in practice: you paste a URL, and
+# the name is right there in it.
+#
+# It reuses that feature's machinery rather than inventing a second one — the
+# same titleAuto flag, so the two suggestions cooperate: whichever happens later
+# refines the title, and the moment the user types in the Title field it is theirs
+# and neither touches it again. Editing an existing entry is safe for free, since
+# its title is non-empty and titleAuto is unset.
+#
+# What gets guessed, and why the host's first label:
+#
+#   http://plex.lan                      -> Plex
+#   https://www.motogp.com/en/videopass  -> Motogp     (leading www. dropped)
+#   https://jellyfin.example.com         -> Jellyfin
+#   http://home-assistant.lan:8123       -> Home Assistant
+#   http://192.168.0.108:3002/gitea      -> Gitea      (IP: first path segment)
+#   http://192.168.0.108:8080            -> ''         (nothing to go on)
+#
+# An IP address says nothing about what is running behind it, so the first path
+# segment stands in — which is exactly the shape a reverse-proxied LAN service
+# takes, and this dashboard is mostly LAN services.
+#
+# The suggestion waits for something host-shaped (a scheme, a dot or a colon).
+# Without that gate, typing a URL by hand would put G, Gi, Git into the Title
+# field on the way to Gitea. Clearing the URL clears a title that came from it,
+# so the dialog does not keep a guess for a URL that is no longer there.
+URL_TITLE_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "the URL suggests a title too",
+            """  fieldChange = (e) => {
+    const f = e.currentTarget.dataset.field, v = e.currentTarget.value;
+    this.setState(s => ({ modal: { ...s.modal, [f]: v, ...(f === 'title' ? { titleAuto: false } : {}) } }));
+  };""",
+            """  fieldChange = (e) => {
+    const f = e.currentTarget.dataset.field, v = e.currentTarget.value;
+    this.setState(s => {
+      const m = { ...s.modal, [f]: v, ...(f === 'title' ? { titleAuto: false } : {}) };
+      if (f === 'url' && (!m.title.trim() || m.titleAuto)) {
+        const raw = v.trim();
+        if (!raw) {
+          if (m.titleAuto) m.title = '';
+        } else if (/^[a-z]+:\\/\\//i.test(raw) || /[.:]/.test(raw)) {
+          const guess = this.titleFromUrl(raw);
+          if (guess) { m.title = guess; m.titleAuto = true; }
+        }
+      }
+      return { modal: m };
+    });
+  };
+  titleFromUrl = (raw) => {
+    let url = (raw || '').trim();
+    if (!url) return '';
+    // Same normalisation saveModal uses, so a scheme-less paste still parses.
+    if (!/^[a-z]+:\\/\\//i.test(url)) url = 'https://' + url;
+    let u;
+    try { u = new URL(url); } catch (e) { return ''; }
+    const host = u.hostname.replace(/^www\\./i, '');
+    const isIp = /^\\[/.test(host) || /^\\d+(\\.\\d+){3}$/.test(host);
+    let label = isIp ? '' : host.split('.')[0];
+    if (!label) label = (u.pathname || '').split('/').filter(Boolean)[0] || '';
+    // Only a path segment can carry an extension; host labels hold no dots here.
+    label = label.replace(/\\.[a-z0-9]{1,5}$/i, '');
+    if (!label || /^\\d+$/.test(label)) return '';
+    return label.split(/[-_+.\\s]+/).filter(Boolean)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  };""",
+        ),
+        (
+            "a clipboard URL suggests a title as well",
+            """      this.setState(s => (s.modal && !s.modal.url)
+        ? { modal: { ...s.modal, url: text } } : null);""",
+            """      this.setState(s => {
+        if (!s.modal || s.modal.url) return null;
+        const guess = (!s.modal.title.trim() || s.modal.titleAuto)
+          ? this.titleFromUrl(text) : '';
+        return { modal: { ...s.modal, url: text,
+          ...(guess ? { title: guess, titleAuto: true } : {}) } };
+      });""",
+        ),
+    )
+)
+
+
 # ── Bookmarks and apps as the same kind of thing ────────────────────────────
 # Items drag between the two lists, and the drop handler already treats them as
 # one shape: moving a bookmark into apps synthesises a desc from the URL host,
@@ -1430,7 +1517,10 @@ def apply_js_patches(body: str) -> str:
                            + CATEGORY_DRAG_PATCHES + LINK_TARGET_PATCHES
                            + FAVICON_PATCHES + LOCKED_HOVER_PATCHES
                            + LOCK_PERSIST_PATCHES + THEME_SELECT_PATCHES
-                           + FONT_SIZE_PATCHES + MOBILE_PATCHES):
+                           + FONT_SIZE_PATCHES + MOBILE_PATCHES
+                           # Last: its anchors are what JS_PATCHES and
+                           # CLIPBOARD_PATCHES leave behind.
+                           + URL_TITLE_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))

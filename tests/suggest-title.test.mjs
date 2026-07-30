@@ -9,13 +9,14 @@ import fs from 'node:fs';
 const built = process.argv[2];
 const tpl = fs.readFileSync(built, 'utf8');
 
-const grab = (name) =>
-  new RegExp('  ' + name + ' = (\\(e\\) => \\{[\\s\\S]*?\\n  \\});').exec(tpl)[1];
+const grab = (name, arg = 'e') =>
+  new RegExp('  ' + name + ' = (\\(' + arg + '\\) => \\{[\\s\\S]*?\\n  \\});').exec(tpl)[1];
 
 // The handlers are class-property arrows, so they close over `this` lexically.
 // Calling the factory with .call(ctx) makes that captured `this` the stub.
 const factory = new Function(
-  `return { pickIcon: ${grab('pickIcon')}, fieldChange: ${grab('fieldChange')} };`
+  `return { pickIcon: ${grab('pickIcon')}, fieldChange: ${grab('fieldChange')},` +
+  ` titleFromUrl: ${grab('titleFromUrl', 'raw')} };`
 );
 
 function session(modal) {
@@ -26,10 +27,14 @@ function session(modal) {
     },
   };
   const h = factory.call(ctx);
+  // fieldChange calls this.titleFromUrl, and the arrows captured `this` as ctx —
+  // so the helper has to hang off ctx, not just off the returned object.
+  ctx.titleFromUrl = h.titleFromUrl;
   return {
     pick: (icon) => h.pickIcon({ currentTarget: { dataset: { icon } } }),
     type: (field, value) =>
       h.fieldChange({ currentTarget: { dataset: { field }, value } }),
+    fromUrl: h.titleFromUrl,
     get modal() { return ctx.state.modal; },
   };
 }
@@ -92,6 +97,93 @@ check('an active search is preserved', q(searched.modal) === 'jelly', q(searched
 const titleFirst = session();
 titleFirst.type('title', 'Plex');
 check('typing a title still pre-filters the grid', q(titleFirst.modal) === 'plex', q(titleFirst.modal));
+
+// 7. the other direction: a URL suggests a Title
+for (const [url, want] of [
+  ['http://plex.lan', 'Plex'],
+  ['plex.lan', 'Plex'],                                  // scheme-less paste
+  ['https://www.motogp.com/en/videopass', 'Motogp'],     // leading www. dropped
+  ['https://jellyfin.example.com', 'Jellyfin'],
+  ['http://home-assistant.lan:8123', 'Home Assistant'],  // port ignored
+  ['http://nas.lan:5000/webman/index.cgi', 'Nas'],       // path ignored when the host names it
+  ['https://synthtopia.com/', 'Synthtopia'],
+  ['http://192.168.0.108:3002/gitea', 'Gitea'],          // IP -> first path segment
+  ['http://192.168.0.108:3002/gitea/firehome.git', 'Gitea'],
+  ['http://[::1]:8096/jellyfin', 'Jellyfin'],            // IPv6 too
+]) {
+  const s = session();
+  s.type('url', url);
+  check(`${url} -> ${want}`, s.modal.title === want, s.modal.title);
+}
+
+// Nothing to go on: no host name and no path. Better an empty field than junk.
+for (const url of ['http://192.168.0.108:8080', 'http://192.168.0.108/', 'http://10.0.0.5/2024']) {
+  const s = session();
+  s.type('url', url);
+  check(`${url} suggests nothing`, s.modal.title === '', s.modal.title);
+}
+
+// Mid-typing must not dribble G, Gi, Git into the field: the guess waits for a
+// scheme, a dot or a colon.
+const typing = session();
+for (const partial of ['g', 'gi', 'git']) {
+  typing.type('url', partial);
+  check(`"${partial}" is too early to guess`, typing.modal.title === '', typing.modal.title);
+}
+typing.type('url', 'gitea.lan');
+check('a host-shaped URL then guesses', typing.modal.title === 'Gitea', typing.modal.title);
+
+// The same rules as the icon suggestion: a typed title wins, an auto one updates.
+const owned = session();
+owned.type('title', 'My Git');
+owned.type('url', 'http://gitea.lan');
+check('a typed title survives a URL', owned.modal.title === 'My Git', owned.modal.title);
+
+const refined = session();
+refined.type('url', 'http://gitea.lan');
+refined.type('url', 'http://grafana.lan');
+check('a guessed title follows a changed URL', refined.modal.title === 'Grafana', refined.modal.title);
+
+const cleared = session();
+cleared.type('url', 'http://gitea.lan');
+cleared.type('url', '');
+check('clearing the URL clears the guess', cleared.modal.title === '', cleared.modal.title);
+
+const kept = session();
+kept.type('title', 'Mine');
+kept.type('url', 'http://gitea.lan');
+kept.type('url', '');
+check('clearing the URL keeps a typed title', kept.modal.title === 'Mine', kept.modal.title);
+
+// Editing an existing entry must not have its title rewritten under it.
+const edit = session({ icon: 'plex', title: 'Plex', url: 'http://plex.lan' });
+edit.type('url', 'http://plex.home.arpa');
+check('an existing title survives a URL change', edit.modal.title === 'Plex', edit.modal.title);
+
+// The two suggestions cooperate, in either order.
+const urlThenIcon = session();
+urlThenIcon.type('url', 'http://gitea.lan');
+urlThenIcon.pick('jellyfin');
+check('a later icon pick refines the URL guess',
+  urlThenIcon.modal.title === 'Jellyfin', urlThenIcon.modal.title);
+const iconThenUrl = session();
+iconThenUrl.pick('jellyfin');
+iconThenUrl.type('url', 'http://gitea.lan');
+check('a later URL refines the icon guess',
+  iconThenUrl.modal.title === 'Gitea', iconThenUrl.modal.title);
+
+// A URL-suggested title must not collapse the icon grid either.
+const urlBrowse = session();
+urlBrowse.type('url', 'http://gitea.lan');
+check('a URL guess leaves the grid unfiltered', q(urlBrowse.modal) === '', q(urlBrowse.modal));
+
+// Junk in must not throw.
+for (const junk of ['', '   ', 'http://', 'https://.', 'not a url', '::::', 'http://%zz.lan']) {
+  const s = session();
+  let threw = null;
+  try { s.type('url', junk); } catch (e) { threw = e.message; }
+  check(`${JSON.stringify(junk)} does not throw`, !threw, threw);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
