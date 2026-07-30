@@ -38,6 +38,7 @@ node tests/lock-persist.mjs http://192.168.0.108:8080 # that the lock survives a
 node tests/theme-select.mjs http://192.168.0.108:8080 # the theme dropdown
 node tests/font-sizes.mjs http://192.168.0.108:8080   # each size control in isolation
 node tests/theme-persist.mjs http://192.168.0.108:8080 # theme + colour pickers persist
+node tests/mobile.mjs http://192.168.0.108:8080       # the three mobile layouts
 ```
 
 `verify.sh` is non-destructive — its config write uses a scratch key and removes
@@ -109,6 +110,7 @@ options that shipped with the page, plus:
 | | |
 | --- | --- |
 | **Open links in a new tab** | On by default. Applies to both apps and bookmarks. |
+| **Mobile layout** | Icon and text, icons only, or text only — on screens under 768px. |
 | **Font sizes** | Five controls: section headings, application name and description, bookmark category and name. Everything except the date and greeting. |
 | **Show hover controls when locked** | Off by default, so locking hides the add/edit/delete affordances. See [DOCKER.md](DOCKER.md#what-the-lock-actually-locks). |
 | *(the lock itself)* | The padlock in the header is remembered, so it survives a reload and applies on every browser. |

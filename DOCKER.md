@@ -580,6 +580,36 @@ that tie and left the add button visible while locked on an empty dashboard. Equ
 specificity is then broken by source order, which is why `LOCKED_CSS` is
 concatenated last.
 
+## Mobile layout
+
+The page was not responsive at all. Both grids carry hardcoded column counts, so a
+390px phone got the applications in **four columns of 69px** — every title
+truncated to "P.." — and the categories in **five columns of 50px**, where the
+names overlapped the delete buttons. That is fixed for everyone below 768px,
+independently of the setting: one category per row, and a greeting that no longer
+wraps into three lines and shoves the header buttons around.
+
+"Mobile" is decided by viewport width, not by sniffing the user agent, so a narrow
+desktop window gets the same treatment — which is what makes it responsive rather
+than device-specific. (Touch capability is detected separately, via
+`@media (hover: none)`, for the hover-revealed controls.)
+
+**Settings → Mobile layout** then chooses how the applications are presented:
+
+| | |
+| --- | --- |
+| **Icon and text** | One per row, as on desktop. The default. |
+| **Icons only** | As many columns as fit at 58px, no text. |
+| **Text only** | One per row, no icons — bookmark icons go too. |
+
+The setting governs the application grid, which is the part with three sensible
+presentations; categories always collapse to one per row.
+
+Icons-only additionally hides the per-card edit/delete overlay. That overlay is
+forced visible on touch, and at 58px it covered the entire icon — obscuring the one
+thing the mode exists to show. It is a launcher view; switch to Icon and text to
+edit an entry.
+
 ## Font sizes
 
 Five controls under **Settings → Font sizes**, covering every piece of dashboard

@@ -1228,6 +1228,114 @@ FONT_SIZE_PATCHES = tuple(
 )
 
 
+# ── Mobile layout ───────────────────────────────────────────────────────────
+# The page was not responsive at all: both grids carry hardcoded column counts,
+# so on a 390px phone the applications sat in 4 columns of 69px — every title
+# truncated to "P.." — and the categories in 5 columns of 50px, where the names
+# overlapped the delete buttons. That is fixed for everyone below the breakpoint,
+# independently of the setting.
+#
+# "Mobile" is decided by viewport width, not by sniffing the user agent: a narrow
+# desktop window gets the same treatment, which is what makes it responsive rather
+# than device-specific.
+#
+# The setting governs the application grid, which is the part with three sensible
+# presentations. Categories always collapse to one per row, since five columns of
+# anything is wrong on a phone.
+MOBILE_BREAKPOINT = "768px"
+MOBILE_LAYOUTS = (
+    ("both", "Icon and text"),
+    ("icons", "Icons only"),
+    ("text", "Text only"),
+)
+
+MOBILE_CSS = (
+    "@media (max-width:" + MOBILE_BREAKPOINT + "){"
+    # Baseline, whatever the mode. One category per row, and a greeting that does
+    # not wrap into three lines and shove the header buttons around.
+    ".bm-grid{grid-template-columns:1fr!important}"
+    ".hdr-row h1{font-size:34px!important}"
+    # Icon and text, one per row.
+    '[data-mobile="both"] .app-grid,'
+    '[data-mobile="text"] .app-grid{grid-template-columns:1fr!important}'
+    # Icons only, packed into as many columns as fit.
+    '[data-mobile="icons"] .app-grid'
+    "{grid-template-columns:repeat(auto-fill,minmax(58px,1fr))!important}"
+    '[data-mobile="icons"] .app-grid a[data-drag-id] > span:not([data-nodrag]),'
+    '[data-mobile="icons"] .add-app span:last-child{display:none!important}'
+    '[data-mobile="icons"] .app-grid a[data-drag-id],'
+    '[data-mobile="icons"] .add-app{justify-content:center!important}'
+    # The per-card edit/delete overlay is forced visible on touch, and at 58px it
+    # covers the whole icon — obscuring the one thing this mode exists to show.
+    # Icons-only is a launcher view; switch to Icon and text to edit an entry.
+    '[data-mobile="icons"] .app-grid a[data-drag-id] > span[data-nodrag]'
+    "{display:none!important}"
+    # Text only — the app icon and the bookmark icons go.
+    '[data-mobile="text"] .app-grid a[data-drag-id] > img,'
+    '[data-mobile="text"] .bm-cat a[data-drag-id] img{display:none!important}'
+    "}"
+)
+
+
+def _mobile_options():
+    return "\n".join(
+        '            <option value="%s">%s</option>' % (value, label)
+        for value, label in MOBILE_LAYOUTS
+    )
+
+
+MOBILE_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "remember the mobile layout",
+            "      lockedHover: !!t.lockedHover,",
+            "      lockedHover: !!t.lockedHover,\n"
+            "      mobileLayout: t.mobileLayout || 'both',",
+        ),
+        (
+            "flag the mobile layout on the root",
+            '<div ref="{{ rootRef }}" data-locked="{{ lockedFlag }}"',
+            '<div ref="{{ rootRef }}" data-locked="{{ lockedFlag }}"'
+            ' data-mobile="{{ mobileLayout }}"',
+        ),
+        (
+            "choosing a mobile layout",
+            "  toggleLockedHover = ()",
+            "  chooseMobile = (e) =>"
+            " this.setTheme({ mobileLayout: e.currentTarget.value });\n"
+            "  toggleLockedHover = ()",
+        ),
+        (
+            "expose the mobile layout and its handler",
+            "      toggleLockedHover: this.toggleLockedHover,",
+            "      toggleLockedHover: this.toggleLockedHover,\n"
+            "      mobileLayout: th.mobileLayout,\n"
+            "      chooseMobile: this.chooseMobile,",
+        ),
+        (
+            "a mobile layout row in the panel",
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            'text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px">Font sizes</div>',
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            "text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px\">"
+            "Mobile layout</div>\n"
+            '        <select value="{{ mobileLayout }}"'
+            ' sc-camel-on-change="{{ chooseMobile }}" style="width:100%;'
+            "background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);"
+            "border-radius:7px;padding:10px 12px;font-size:14px;color:#eceef1;"
+            'font-family:inherit;color-scheme:dark;cursor:pointer">\n'
+            + _mobile_options()
+            + "\n        </select>\n"
+            '        <div style="font-size:11.5px;color:#6d757e;margin-top:7px">'
+            "Applies on screens under " + MOBILE_BREAKPOINT + ".</div>\n"
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            'text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px">Font sizes</div>',
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
@@ -1235,7 +1343,7 @@ def apply_js_patches(body: str) -> str:
                            + CATEGORY_DRAG_PATCHES + LINK_TARGET_PATCHES
                            + FAVICON_PATCHES + LOCKED_HOVER_PATCHES
                            + LOCK_PERSIST_PATCHES + THEME_SELECT_PATCHES
-                           + FONT_SIZE_PATCHES):
+                           + FONT_SIZE_PATCHES + MOBILE_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))
@@ -1274,7 +1382,7 @@ def patch_template(html: str) -> str:
         + CARD_MARGIN_CSS
         + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
         + ICON_TILE_CSS + CATEGORY_GRIP_CSS + FONT_SIZE_CSS + TOUCH_CSS
-        + LOCKED_CSS + "</style>"
+        + MOBILE_CSS + LOCKED_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
     )
     escaped = json.dumps(tag)[1:-1].replace("</", "<\\u002F")

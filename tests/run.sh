@@ -311,6 +311,24 @@ assert "if (!isFinite(size) || size < 8 || size > 40) return;" in tpl, \
     "an absurd size would be accepted"
 print("ok    five font sizes wired to custom properties")
 
+# Mobile. Both grids carried hardcoded column counts, so a phone got four 69px
+# app columns and five 50px category columns.
+mobile = re.search(r"@media \(max-width:768px\)\{(.*?)\}(?=\[data-locked|\Z)", tpl, re.S)
+assert mobile, "no mobile media query"
+block = mobile.group(1)
+assert ".bm-grid{grid-template-columns:1fr!important}" in block, \
+    "categories still use five columns on a phone"
+for mode in ("both", "icons", "text"):
+    assert '[data-mobile="%s"]' % mode in block, "no rule for the %s layout" % mode
+assert 'data-mobile="{{ mobileLayout }}"' in tpl, "the root carries no mobile flag"
+assert "mobileLayout: t.mobileLayout || 'both'" in tpl, "mobile layout is not part of theme()"
+# Icons-only must not leave the touch overlay covering the icon it exists to show.
+assert '[data-mobile="icons"] .app-grid a[data-drag-id] > span[data-nodrag]{display:none!important}' in block, \
+    "the edit overlay would cover a 58px icon in icons-only mode"
+# Everything must sit inside the media query, or desktop changes too.
+assert "@media" in tpl[:tpl.index('[data-mobile="both"]')], "mobile rules escaped the media query"
+print("ok    responsive mobile layouts wired")
+
 print("ok    header lock/settings buttons flattened, locked state preserved")
 
 # The picker takes its list from the service so an update shows up without a
