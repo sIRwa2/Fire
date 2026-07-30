@@ -26,8 +26,10 @@ const factory = new Function(
 );
 
 // Enough of the real icon set to exercise "only filter to something that exists".
+// synthtopia is deliberately absent, as it is from the real set — that is the
+// case the site-icon fetch on save exists for.
 const ICONS = ['gitea', 'grafana', 'plex', 'jellyfin', 'nginx', 'home-assistant',
-  'gitea-light', 'portainer', 'proxmox', 'synthtopia'];
+  'gitea-light', 'portainer', 'proxmox'];
 
 function session(modal, icons = ICONS) {
   const ctx = {
@@ -230,6 +232,62 @@ const noIcons = session(undefined, []);
 noIcons.type('url', 'http://gitea.lan');
 check('no icon list means no filter', noIcons.modal.q === '', noIcons.modal.q);
 check('the title is suggested regardless', noIcons.modal.title === 'Gitea', noIcons.modal.title);
+
+// 9. the URL also selects the icon, so Enter stores it
+const picked = session();
+picked.type('url', 'http://gitea.lan');
+check('a URL selects the matching icon', picked.modal.icon === 'gitea', picked.modal.icon);
+
+// Exact names only. The grid matches substrings, so the first icon shown for
+// "plex" is perplexity-dark and for "nginx" it is nginx-proxy-manager — taking
+// the first would attach the wrong icon and Enter would store it.
+const SUBSTRING_TRAPS = ['perplexity-dark', 'plex', 'nginx-proxy-manager', 'nginx',
+  'freenas', 'nasa', 'habitica', 'jellyfin-vue', 'jellyfin'];
+for (const [url, want] of [
+  ['http://plex.lan', 'plex'],
+  ['http://nginx.lan', 'nginx'],
+  ['http://jellyfin.lan', 'jellyfin'],
+]) {
+  const s = session(undefined, SUBSTRING_TRAPS);
+  s.type('url', url);
+  check(`${url} picks ${want}, not the first substring match`, s.modal.icon === want, s.modal.icon);
+}
+for (const url of ['http://ha.lan', 'http://nas.lan']) {
+  const s = session(undefined, SUBSTRING_TRAPS);
+  s.type('url', url);
+  check(`${url} selects nothing rather than guessing`, !s.modal.icon, s.modal.icon);
+}
+
+// A host with no icon at all leaves it for the site-icon fetch on save.
+const noMatch = session();
+noMatch.type('url', 'https://synthtopia.com');
+check('an unmatched host selects no icon', !noMatch.modal.icon, noMatch.modal.icon);
+
+// A hand-picked icon is a decision: later URLs refine the title, never the icon.
+const handPicked = session();
+handPicked.pick('plex');
+handPicked.type('url', 'http://gitea.lan');
+check('a hand-picked icon survives a URL', handPicked.modal.icon === 'plex', handPicked.modal.icon);
+check('but the title still follows the URL', handPicked.modal.title === 'Gitea', handPicked.modal.title);
+
+// An auto-selected one is replaced by the next URL, and dropped when nothing matches.
+const reselect = session();
+reselect.type('url', 'http://gitea.lan');
+reselect.type('url', 'http://grafana.lan');
+check('a changed URL re-selects the icon', reselect.modal.icon === 'grafana', reselect.modal.icon);
+const dropped = session();
+dropped.type('url', 'http://gitea.lan');
+dropped.type('url', 'https://synthtopia.com');
+check('a URL matching no icon drops the auto one', !dropped.modal.icon, dropped.modal.icon);
+const clearedIcon = session();
+clearedIcon.type('url', 'http://gitea.lan');
+clearedIcon.type('url', '');
+check('clearing the URL drops the auto icon', !clearedIcon.modal.icon, clearedIcon.modal.icon);
+
+// Editing an existing entry must not have its icon swapped under it.
+const editIcon = session({ icon: 'plex', title: 'Plex', url: 'http://plex.lan' });
+editIcon.type('url', 'http://gitea.lan');
+check('an existing icon survives a URL change', editIcon.modal.icon === 'plex', editIcon.modal.icon);
 
 // Junk in must not throw.
 for (const junk of ['', '   ', 'http://', 'https://.', 'not a url', '::::', 'http://%zz.lan']) {

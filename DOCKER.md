@@ -428,6 +428,35 @@ Filtering to a label nothing matches would leave the picker empty, which is wors
 than showing everything — so `http://my-nas.lan` suggests the title "My Nas" and
 leaves the grid alone.
 
+### And it selects the icon
+
+The icon is attached as well, so paste-then-Enter stores a complete entry. This is
+the one place where taking "the first match" would be actively wrong, because the
+grid matches **substrings**:
+
+| pasted | grid leads with | attached |
+| --- | --- | --- |
+| `http://plex.lan` | `perplexity-dark` | `plex` |
+| `http://nginx.lan` | `nginx-proxy-manager` | `nginx` |
+| `http://jellyfin.lan` | `jellyfin-vue` | `jellyfin` |
+| `http://ha.lan` | `2dehands` (101 matches) | *(nothing)* |
+
+So only an **exact** name is attached — matched against the name with any
+`.webp`/`.png` extension stripped, since 690 of the icons carry one. A wrong icon
+is worse than no icon here, because Enter stores it without another look, and no
+match simply leaves the field empty: that is what the site-icon fetch on save is
+already for. `http://synthtopia.com` still ends up with a fetched favicon.
+
+`iconAuto` mirrors `titleAuto` and `qAuto`. Clicking a tile is a decision, so
+`pickIcon` clears the flag and no later URL will replace that icon. An
+auto-attached one is replaced when the URL changes, and dropped when the new URL
+matches nothing — never left pointing at the previous host's app.
+
+Which icon is attached shows in the dialog's **preview tile**, not in the grid: the
+selected-tile highlight (`ic.bg` / `ic.border`) is overridden by `ICON_TILE_CSS`,
+which flattens every tile. Restoring it for the selected tile alone would need a
+marker on the element, since nothing in the markup distinguishes it.
+
 ### Enter commits the dialog
 
 Paste a URL, get a Title guessed from it, and the dialog is already complete — so

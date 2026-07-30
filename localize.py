@@ -624,6 +624,7 @@ URL_TITLE_PATCHES = tuple(
     // into the Title on the way to Gitea.
     const ready = /^[a-z]+:\\/\\//i.test(url) || /[.:]/.test(url);
     const label = ready ? this.labelFromUrl(url) : '';
+    const pool = label ? (this.state.icons || []).filter(n => n.includes(label)) : [];
     if (!m.title.trim() || m.titleAuto) {
       if (!url) { if (m.titleAuto) { m.title = ''; m.titleAuto = false; } }
       else if (label) { m.title = this.titleFromUrl(url); m.titleAuto = true; }
@@ -631,9 +632,18 @@ URL_TITLE_PATCHES = tuple(
     if (!(m.q || '').trim() || m.qAuto) {
       // Filtering to a label no icon matches would empty the picker, which is
       // worse than showing everything.
-      const hit = !!label && (this.state.icons || []).some(n => n.includes(label));
-      if (!hit) { if (m.qAuto) { m.q = ''; m.qAuto = false; } }
+      if (!pool.length) { if (m.qAuto) { m.q = ''; m.qAuto = false; } }
       else { m.q = label; m.qAuto = true; }
+    }
+    if (!m.icon || m.iconAuto) {
+      // Exact name only, never the first match in the grid: the grid matches on
+      // substrings, so "plex" leads with perplexity-dark and "nginx" with
+      // nginx-proxy-manager. An icon attached by mistake is worse than none,
+      // because Enter stores it without another look — and no match just leaves
+      // the field empty, which is what the site-icon fetch on save is for.
+      const exact = pool.find(n => n.replace(/\\.(svg|webp|png)$/i, '') === label);
+      if (exact) { m.icon = exact; m.iconAuto = true; }
+      else if (m.iconAuto) { m.icon = ''; m.iconAuto = false; }
     }
     return m;
   };
@@ -655,6 +665,15 @@ URL_TITLE_PATCHES = tuple(
   };
   titleFromUrl = (raw) => this.labelFromUrl(raw).split(/[-_+.\\s]+/).filter(Boolean)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');""",
+        ),
+        (
+            # Anchored on what JS_PATCHES leaves behind. A click is a decision:
+            # from here on the URL may still refine the title, but never the icon.
+            "a hand-picked icon is not a suggestion",
+            "      return { modal: { ...m, icon, title: suggest ? suggestion : m.title,"
+            " titleAuto: suggest } };",
+            "      return { modal: { ...m, icon, title: suggest ? suggestion : m.title,"
+            " titleAuto: suggest, iconAuto: false } };",
         ),
         (
             "a clipboard URL suggests a title as well",

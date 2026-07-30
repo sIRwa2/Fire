@@ -135,6 +135,24 @@ check('every icon shown matches the host', filtered.every(n => n.includes('gitea
   filtered.slice(0, 5).join(','));
 check('the search box shows what it filtered by',
   (await fields()).q === 'gitea', JSON.stringify(await fields()));
+// The icon is selected too, so Enter alone stores a complete entry. The dialog's
+// preview tile is what shows which one — the grid's selected-tile highlight is
+// suppressed by ICON_TILE_CSS, which flattens every tile.
+const preview = () => page.evaluate((d) => {
+  const img = document.querySelector(d + ' img');
+  return img ? img.getAttribute('src') : null;
+}, DIALOG);
+check('the matching icon is selected', await preview() === '/icons/gitea.svg', await preview());
+
+// The trap this must not fall into: the grid matches substrings, so for "plex"
+// the first tile shown is perplexity-dark. Only an exact name may be attached.
+await page.locator(`${DIALOG} input[data-field="url"]`).fill('http://plex.lan');
+await page.waitForTimeout(400);
+const shown = await iconNames();
+check('the grid leads with a substring match', shown[0] !== 'plex', shown.slice(0, 3).join(','));
+check('but the exact icon is the one selected', await preview() === '/icons/plex.svg', await preview());
+await page.locator(`${DIALOG} input[data-field="url"]`).fill('http://gitea.lan');
+await page.waitForTimeout(400);
 
 // Picking from the filtered grid must not make it jump back to everything.
 await page.locator(`${DIALOG} span[data-icon]`).first().click();
@@ -160,7 +178,8 @@ check('but the title is still guessed',
   (await fields()).title === 'Zzzznotathing', JSON.stringify(await fields()));
 await closeDialog();
 
-// 8. Enter commits the dialog — the point of the paste flow: paste, Enter, done.
+// 8. Paste, Enter, done — the whole point: the entry lands with its icon, and no
+//    site-icon fetch is needed because one was already chosen.
 await openAdd();
 await page.locator(`${DIALOG} input[data-field="url"]`).fill('http://grafana.lan');
 await page.waitForTimeout(350);
@@ -171,6 +190,8 @@ await page.waitForTimeout(700);
 check('Enter saved the entry',
   doc.v1.apps.length === 3 && doc.v1.apps[2].title === 'Grafana',
   JSON.stringify(doc.v1.apps.map(a => a.title)));
+check('and it stored the auto-selected icon',
+  doc.v1.apps[2].icon === 'grafana', JSON.stringify(doc.v1.apps[2]));
 check('Enter closed the dialog', await page.locator(DIALOG).count() === 0,
   await page.locator(DIALOG).count());
 

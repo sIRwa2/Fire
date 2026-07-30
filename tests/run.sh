@@ -417,8 +417,18 @@ assert "if (!(m.q || '').trim() || m.qAuto) {" in tpl, \
 assert "/^[a-z]+:\\/\\//i.test(url) || /[.:]/.test(url)" in tpl, \
     "the URL guess would fire on every keystroke"
 # Filtering to a label nothing matches would leave the icon picker empty.
-assert "(this.state.icons || []).some(n => n.includes(label))" in tpl, \
+assert "const pool = label ? (this.state.icons || []).filter(n => n.includes(label)) : [];" in tpl, \
     "the grid could be filtered down to nothing"
+# The icon is auto-selected on an exact name only. The pool is substring-matched,
+# so "plex" leads with perplexity-dark and "nginx" with nginx-proxy-manager —
+# taking pool[0] would attach the wrong icon, and Enter would store it.
+assert "const exact = pool.find(n => n.replace(/\\.(svg|webp|png)$/i, '') === label);" in tpl, \
+    "the auto-selected icon is not restricted to an exact name"
+assert "pool[0]" not in tpl, "the first substring match is being attached as the icon"
+assert "if (!m.icon || m.iconAuto) {" in tpl, \
+    "a URL could replace an icon the user picked"
+assert "titleAuto: suggest, iconAuto: false } };" in tpl, \
+    "a hand-picked icon is not marked as deliberate, so a later URL would replace it"
 # The grid filters off m.q, which is why picking an icon does not unfilter it.
 assert "const q = (m.q || (m.titleAuto ? '' : m.title) || '').trim().toLowerCase();" in tpl, \
     "the grid's filter expression changed; the URL pre-filter rides on m.q"
