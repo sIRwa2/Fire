@@ -218,22 +218,74 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     check(`${label}: focused search bar stays visible off-hover`,
       searchFocusOpacity === '1', searchFocusOpacity);
 
-    // Enter must actually navigate. This is the one check that exercises the
-    // deployment's CSP: form-action was 'none', which blocks the submit with no
-    // navigation and no visible error, so the bar looked fine and did nothing.
-    // The request is aborted rather than followed, so no traffic leaves the box.
-    let submitted = null;
+    // Enter must actually navigate, under the deployment's real CSP. This is
+    // the only check that exercises it: the search used to submit the form
+    // natively, which form-action 'none' blocks with no navigation and no
+    // visible error, so the bar looked fine and did nothing. It now navigates
+    // with location.assign, which form-action does not govern.
+    // Requests are aborted rather than followed, so no traffic leaves the box.
     expectSearchNavigation = true;
-    await page.route('**duckduckgo.com**', (r) => {
-      submitted = r.request().url();
-      r.abort();
-    });
+    let submitted = null;
+    const catchNav = (r) => { submitted = r.request().url(); r.abort(); };
+    for (const host of ['**duckduckgo.com**', '**google.com**', '**searx.lan**']) {
+      await page.route(host, catchNav);
+    }
     await page.type('.hdr-search input', 'proxmox docs');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(1200);
-    check(`${label}: Enter submits the search`,
+    check(`${label}: Enter searches with the default engine`,
       submitted === 'https://duckduckgo.com/?q=proxmox+docs', submitted || 'no navigation');
-    await page.unroute('**duckduckgo.com**');
+
+    // Switching the engine in Settings must change where Enter goes, and a
+    // custom URL must work even though the CSP can never have named it.
+    for (const [key, url, expected] of [
+      ['google', null, 'https://www.google.com/search?q=proxmox+docs'],
+      ['custom', 'https://searx.lan/search?q=%s', 'https://searx.lan/search?q=proxmox+docs'],
+    ]) {
+      await page.goto(base, { waitUntil: 'networkidle' });
+      await page.hover('.page-wrap > header');
+      await page.waitForTimeout(200);
+      await page.click('button[title="Settings"]');
+      await page.waitForTimeout(400);
+      await page.selectOption('select[data-k="searchEngine"]', key);
+      await page.waitForTimeout(250);
+      if (url) {
+        await page.fill('input[type="url"]', url);
+        await page.dispatchEvent('input[type="url"]', 'change');
+        await page.waitForTimeout(250);
+      }
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(250);
+      submitted = null;
+      await page.hover('.hdr-search');
+      await page.waitForTimeout(150);
+      await page.fill('.hdr-search input', 'proxmox docs');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(1200);
+      check(`${label}: Enter searches with the ${key} engine`,
+        submitted === expected, submitted || 'no navigation');
+    }
+
+    for (const host of ['**duckduckgo.com**', '**google.com**', '**searx.lan**']) {
+      await page.unroute(host, catchNav);
+    }
+    // Back to defaults for the checks below, which assume a stock dashboard.
+    // The aborted navigation leaves the tab on an error page, where
+    // localStorage is inaccessible — so return to the origin before clearing.
+    // The theme is stored under fireHome.theme: with no config service behind
+    // the shim it degrades to real localStorage, so clearing the engine keys
+    // there is what resets the picker.
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.evaluate(() => {
+      const raw = localStorage.getItem('fireHome.theme');
+      if (!raw) return;
+      try {
+        const t = JSON.parse(raw);
+        delete t.searchEngine;
+        delete t.searchUrl;
+        localStorage.setItem('fireHome.theme', JSON.stringify(t));
+      } catch { localStorage.removeItem('fireHome.theme'); }
+    });
     await page.goto(base, { waitUntil: 'networkidle' });
     expectSearchNavigation = false;
     check(`${label}: add button has no border`, transparent(s.addBorder), s.addBorder);

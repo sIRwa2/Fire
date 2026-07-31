@@ -99,12 +99,38 @@ HEADER_CSS = ".page-wrap > header{margin-top:50px!important}"
 # control — it brings the clear (×) button, the search keyboard on mobile, and
 # Escape-to-clear, none of which would be worth reimplementing.
 #
-# The engine is hardcoded. A page cannot read the browser's configured default
-# search engine — there is no API for it, deliberately, since it would be a
-# fingerprinting vector — so "native" can only mean the native input control,
-# not the native engine. DuckDuckGo is the default here because it needs no
-# account and honours the ?q= form without a referrer.
+# A page cannot read the browser's configured default search engine — there is
+# no API for it, deliberately, since it would be a fingerprinting vector — so
+# "native" can only mean the native input control, not the native engine. The
+# engine is therefore chosen in Settings; DuckDuckGo is the default because it
+# needs no account and honours the ?q= form without a referrer.
 SEARCH_ACTION = "https://duckduckgo.com/"
+
+# Submitting is a JS location assignment rather than the form's own GET. The
+# form's action would be constrained by the CSP's form-action, which cannot
+# name a URL the user has not typed yet — so a custom engine would be blocked
+# with no navigation and no error, which is exactly how the search bar failed
+# the first time. A top-level location assignment is not covered by
+# form-action, so any engine works and the directive stays at 'none'.
+#
+# The cost is that the bar needs JS. Nothing is lost: the whole dashboard is a
+# JS-rendered bundle, so a no-JS page has no search box to submit anyway.
+#
+# %s marks where the query goes. Presets all happen to be ?q=, but the custom
+# field accepts any shape, so substitution is used rather than appending.
+SEARCH_ENGINES = (
+    ("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q=%s"),
+    ("google", "Google", "https://www.google.com/search?q=%s"),
+    ("bing", "Bing", "https://www.bing.com/search?q=%s"),
+    ("startpage", "Startpage", "https://www.startpage.com/sp/search?query=%s"),
+    ("searxng", "SearXNG (self-hosted)", ""),
+    ("whoogle", "Whoogle (self-hosted)", ""),
+    ("custom", "Custom…", ""),
+)
+
+# The engines whose URL the user supplies. Selecting one reveals the URL field,
+# and until it holds a %s the bar has nowhere to send the query.
+SEARCH_CUSTOM_KEYS = ("searxng", "whoogle", "custom")
 
 # The × for the native clear button, as a mask so the colour comes from the rule
 # above and can differ on hover. Inline rather than a custom property: --accent
@@ -862,10 +888,10 @@ SEARCH_PATCHES = tuple(
         (
             "search bar above the header",
             '<header data-screen-label="Header">',
-            '<form class="hdr-search" action="' + SEARCH_ACTION + '" '
-            'method="get" role="search">'
+            '<form class="hdr-search" role="search" '
+            'sc-camel-on-submit="{{ runSearch }}">'
             '<input type="search" name="q" autocomplete="off" '
-            'aria-label="Search the web" placeholder="Search the web…">'
+            'aria-label="Search the web" placeholder="{{ searchHint }}">'
             "</form>"
             '<header data-screen-label="Header">',
         ),
@@ -1785,6 +1811,124 @@ MOBILE_PATCHES = tuple(
 )
 
 
+def _engine_options():
+    return "\n".join(
+        '            <option value="%s">%s</option>' % (key, label)
+        for key, label, _url in SEARCH_ENGINES
+    )
+
+
+# ── Choosing the search engine ──────────────────────────────────────────────
+# The picker writes searchEngine (a key) and searchUrl (the custom template) to
+# the theme, the same store the rest of the settings use, so the choice
+# survives a reload and rides along with the existing persistence.
+#
+# runSearch resolves the key to a URL template, substitutes the query and
+# assigns location. Three things it has to get right:
+#
+#   * preventDefault always, even when there is nowhere to send the query —
+#     otherwise the form falls back to its native GET, which reloads the
+#     dashboard with ?q=... and loses what was typed.
+#   * encodeURIComponent, then + for spaces: encodeURIComponent gives %20,
+#     which every engine accepts, but + is what a native form would have sent
+#     and what the engines' own boxes produce, so the resulting URL looks
+#     ordinary rather than machine-made.
+#   * a blank or %s-less custom URL is a no-op rather than a navigation to
+#     nowhere. The settings panel says so, and the placeholder says so, so the
+#     failure is visible before Enter is ever pressed.
+SEARCH_ENGINE_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "remember the engine and any custom URL",
+            "      mobileLayout: t.mobileLayout || 'both',",
+            "      mobileLayout: t.mobileLayout || 'both',\n"
+            "      searchEngine: t.searchEngine || '%s',\n"
+            "      searchUrl: t.searchUrl || ''," % SEARCH_ENGINES[0][0],
+        ),
+        (
+            "resolve the engine, and run the search",
+            "  chooseMobile = (e) =>",
+            "  static SEARCH_ENGINES() {\n"
+            "    return "
+            + json.dumps(
+                [{"key": k, "label": l, "url": u} for k, l, u in SEARCH_ENGINES]
+            )
+            + ";\n"
+            "  }\n"
+            "  searchTemplate() {\n"
+            "    const th = this.theme();\n"
+            "    const e = Component.SEARCH_ENGINES()"
+            ".find(x => x.key === th.searchEngine);\n"
+            "    const url = (e && e.url) || th.searchUrl || '';\n"
+            "    return url.indexOf('%s') >= 0 ? url : '';\n"
+            "  }\n"
+            "  chooseEngine = (e) =>"
+            " this.setTheme({ searchEngine: e.currentTarget.value });\n"
+            "  searchUrlChange = (e) =>"
+            " this.setTheme({ searchUrl: e.currentTarget.value.trim() });\n"
+            "  runSearch = (e) => {\n"
+            "    e.preventDefault();\n"
+            "    const tpl = this.searchTemplate();\n"
+            "    const input = e.currentTarget.querySelector('input[name=q]');\n"
+            "    const q = input ? input.value.trim() : '';\n"
+            "    if (!tpl || !q) return;\n"
+            "    const enc = encodeURIComponent(q).replace(/%20/g, '+');\n"
+            "    window.location.assign(tpl.replace('%s', enc));\n"
+            "  };\n"
+            "  chooseMobile = (e) =>",
+        ),
+        (
+            "expose the engine, its handlers and the hint",
+            "      mobileLayout: th.mobileLayout,",
+            "      mobileLayout: th.mobileLayout,\n"
+            "      searchEngine: th.searchEngine,\n"
+            "      searchUrl: th.searchUrl,\n"
+            "      chooseEngine: this.chooseEngine,\n"
+            "      searchUrlChange: this.searchUrlChange,\n"
+            "      runSearch: this.runSearch,\n"
+            "      customEngine: " + json.dumps(list(SEARCH_CUSTOM_KEYS))
+            + ".indexOf(th.searchEngine) >= 0,\n"
+            "      searchHint: this.searchTemplate() ? 'Search the web…'"
+            " : 'Set a search URL in Settings…',",
+        ),
+        (
+            "an engine row in the panel",
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            "text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px\">"
+            "Mobile layout</div>",
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            "text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px\">"
+            "Search engine</div>\n"
+            '        <select value="{{ searchEngine }}" data-k="searchEngine"'
+            ' sc-camel-on-change="{{ chooseEngine }}" style="width:100%;'
+            "background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);"
+            "border-radius:7px;padding:10px 12px;font-size:14px;color:#eceef1;"
+            'font-family:inherit;color-scheme:dark;cursor:pointer">\n'
+            + _engine_options()
+            + "\n        </select>\n"
+            '        <sc-if value="{{ customEngine }}"'
+            ' hint-placeholder-val="{{ false }}">\n'
+            '          <input type="url" value="{{ searchUrl }}"'
+            ' sc-camel-on-change="{{ searchUrlChange }}"'
+            ' placeholder="https://searx.lan/search?q=%s"'
+            ' style="width:100%;box-sizing:border-box;margin-top:9px;'
+            "background:rgba(255,255,255,.05);"
+            "border:1px solid rgba(255,255,255,.15);border-radius:7px;"
+            "padding:10px 12px;font-size:13.5px;color:#eceef1;"
+            'font-family:inherit;outline:none">\n'
+            '          <div style="font-size:11.5px;color:#6d757e;margin-top:7px">'
+            "%s is where the query goes. Without it the search bar stays"
+            " inactive.</div>\n"
+            "        </sc-if>\n"
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            "text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px\">"
+            "Mobile layout</div>",
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
@@ -1793,6 +1937,9 @@ def apply_js_patches(body: str) -> str:
                            + FAVICON_PATCHES + LOCKED_HOVER_PATCHES
                            + LOCK_PERSIST_PATCHES + THEME_SELECT_PATCHES
                            + FONT_SIZE_PATCHES + MOBILE_PATCHES
+                           # After MOBILE_PATCHES: its anchors are the theme key
+                           # and settings row that patch adds.
+                           + SEARCH_ENGINE_PATCHES
                            # Last: its anchors are what JS_PATCHES and
                            # CLIPBOARD_PATCHES leave behind.
                            + URL_TITLE_PATCHES + ENTER_SAVE_PATCHES

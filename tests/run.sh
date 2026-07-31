@@ -73,27 +73,18 @@ for target in sorted(mounted):
     )
 print("ok    every api volume mountpoint exists in the image (%s)" % ", ".join(sorted(mounted)))
 
-# The CSP has to permit the search bar's own destination. form-action was
-# 'none', which blocks a submit with no navigation and no visible error — the
-# search bar looked wired up and Enter simply did nothing. Nothing caught it
-# because the page under test here is served without any CSP at all, so the
-# policy is checked against the source it constrains instead.
+# The search bar navigates with location.assign, not a form submit, so
+# form-action can stay fully closed. If it is ever relaxed to carry a search
+# origin again, the bar has silently regressed to a native submit — which
+# cannot reach a user-supplied engine, and fails with no error when it tries.
 nginx = open(os.path.join(root, "nginx.conf"), encoding="utf-8").read()
 csp = re.search(r'add_header Content-Security-Policy "([^"]*)"', nginx).group(1)
 form_action = re.search(r"form-action ([^;\"]*)", csp).group(1).strip()
-assert form_action != "'none'", \
-    "form-action is 'none'; the search bar's submit is blocked and Enter does nothing"
-localize_py = open(os.path.join(root, "localize.py"), encoding="utf-8").read()
-action = re.search(r'^SEARCH_ACTION = "([^"]*)"', localize_py, re.M).group(1)
-origin = "/".join(action.split("/")[:3])
-assert origin in form_action, (
-    "CSP form-action (%s) does not permit SEARCH_ACTION (%s); Enter would be "
-    "silently blocked in the real deployment" % (form_action, origin)
+assert form_action == "'none'", (
+    "form-action is %s, not 'none'; the search bar navigates with "
+    "location.assign and needs no form-action allowance" % form_action
 )
-# Narrow on purpose: a wildcard here would let any injected form post anywhere.
-assert "*" not in form_action and "'self'" not in form_action.replace("'none'", ""), \
-    "form-action should list only the search origin, not a wildcard or 'self'"
-print("ok    CSP form-action permits exactly the search engine (%s)" % form_action)
+print("ok    CSP form-action stays 'none' (search navigates via JS)")
 
 # Only the first stage's files are visible to localize.py in the container.
 sources = copy_sources(stages[0])
@@ -178,8 +169,14 @@ print("ok    header offset wired up")
 search = re.search(r'<form class="hdr-search"[^>]*>(.*?)</form>', tpl, re.S)
 assert search, "search form is gone"
 form = re.search(r'<form class="hdr-search"([^>]*)>', tpl).group(1)
-assert 'action="https://duckduckgo.com/"' in form, "search form lost its action"
-assert 'method="get"' in form, "search form is no longer a GET; the query would be dropped"
+# No action/method: a native submit would bypass the chosen engine entirely, and
+# is what the CSP's form-action 'none' blocks with no error.
+for gone in ("action=", "method="):
+    assert gone not in form, (
+        "the search form carries %s, so it would submit natively, ignore the "
+        "engine setting and be blocked by form-action: %s" % (gone, form.strip())
+    )
+assert "runSearch" in form, "the search form has no submit handler"
 assert 'type="search"' in search.group(1), "search input is no longer type=search"
 assert 'name="q"' in search.group(1), "search input lost name=q; the engine gets no query"
 assert 'aria-label=' in search.group(1), "search input has no accessible name"
@@ -199,6 +196,33 @@ assert "display:none" not in tpl.split(".hdr-search{")[1][:200], \
     "search bar hidden with display:none, which does not reserve its height"
 assert ".hdr-search:hover{opacity:1}" in tpl, \
     "the search bar's own strip no longer reveals it"
+
+# The engine picker: every preset offered, the query placeholder substituted
+# rather than appended, and the custom URL field gated on a custom engine.
+localize_py = open(os.path.join(root, "localize.py"), encoding="utf-8").read()
+engines = re.findall(r'^SEARCH_ENGINES = \((.*?)^\)', localize_py, re.S | re.M)[0]
+keys = re.findall(r'\("([a-z]+)",', engines)
+assert len(keys) >= 4, "expected at least four search engines, found %s" % keys
+for key in keys:
+    assert '<option value="%s">' % key in tpl, "engine %s is not offered in the panel" % key
+assert 'sc-camel-on-change="{{ chooseEngine }}"' in tpl, "the engine select has no handler"
+# A preset whose URL is blank must be one of the user-supplied ones, or picking
+# it would leave the bar dead with no field to fix it in.
+supplied = re.search(r"^SEARCH_CUSTOM_KEYS = \(([^)]*)\)", localize_py, re.M).group(1)
+for key, url in re.findall(r'\("([a-z]+)", "[^"]*", "([^"]*)"\)', engines):
+    if not url:
+        assert '"%s"' % key in supplied, (
+            "engine %s has no URL and is not in SEARCH_CUSTOM_KEYS, so choosing "
+            "it would leave the search bar inert with nowhere to set a URL" % key
+        )
+assert "searchUrlChange" in tpl, "the custom search URL field has no handler"
+assert "%s is where the query goes" in tpl, "the custom URL field lost its hint"
+# The handler must block the native submit unconditionally: without it the form
+# falls back to a GET at the dashboard's own URL and the query is lost.
+assert "e.preventDefault()" in tpl.split("runSearch = (e) =>")[1][:120], \
+    "runSearch does not preventDefault first; a native submit would reload the page"
+assert "window.location.assign" in tpl, "runSearch does not navigate"
+print("ok    %d search engines offered, custom URL gated and handled" % len(keys))
 assert ".hdr-search:focus-within{opacity:1}" in tpl, \
     "search bar would fade out while being typed in"
 # The strip is the only trigger: revealing from the header block as well put a
