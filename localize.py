@@ -132,6 +132,19 @@ SEARCH_ENGINES = (
 # and until it holds a %s the bar has nowhere to send the query.
 SEARCH_CUSTOM_KEYS = ("searxng", "whoogle", "custom")
 
+# Suggestions are off by default. They cannot be fetched from the browser — no
+# engine sends Access-Control-Allow-Origin and connect-src is 'self' — so they
+# come from the api's /suggest, which fetches upstream server-side. That means
+# every keystroke leaves the network, which is a real change for a dashboard
+# that otherwise talks to nothing, so it is opt-in and the panel says as much.
+#
+# Only the four preset engines have a suggestion endpoint. A self-hosted engine
+# needs its own JSON API enabled and answers in its own shape, so the toggle is
+# hidden rather than offered and quietly broken.
+SEARCH_SUGGEST_KEYS = ("duckduckgo", "google", "bing", "startpage")
+SUGGEST_DEBOUNCE_MS = 160
+SUGGEST_MAX = 8
+
 # The × for the native clear button, as a mask so the colour comes from the rule
 # above and can differ on hover. Inline rather than a custom property: --accent
 # is published on document.body at runtime by applyTheme, and there is no static
@@ -1929,6 +1942,212 @@ SEARCH_ENGINE_PATCHES = tuple(
 )
 
 
+# ── Search suggestions ──────────────────────────────────────────────────────
+# Typed queries go to /api/suggest, which fetches the engine's own endpoint
+# server-side; see api/suggest.py for why a direct browser fetch is impossible.
+#
+# The parts that matter:
+#
+#   * Debounced, and every in-flight request is superseded. A stale response
+#     arriving after a newer one would otherwise repopulate the list with
+#     suggestions for a prefix the user has already typed past — so responses
+#     carry the query they were for and are dropped unless it still matches.
+#   * The highlighted index is reset on every fresh input, or the selection
+#     would point into a list that has since changed under it.
+#   * Enter with something highlighted searches that suggestion; Enter with
+#     nothing highlighted searches what was typed. Escape closes the list
+#     first and only clears the field on a second press, which is what the
+#     native search control already does.
+#   * Pointerdown on a row, not click: click fires after the input's blur,
+#     which closes the list and would leave the click landing on nothing.
+SUGGEST_CSS = (
+    ".hdr-sugg{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:60;"
+    "margin:0;padding:5px;list-style:none;border-radius:9px;"
+    "border:1px solid rgba(255,255,255,.12);background:#2a2f38;"
+    "box-shadow:0 12px 34px rgba(0,0,0,.45)}"
+    ".hdr-sugg li{padding:8px 11px;border-radius:6px;font-size:13.5px;"
+    "color:#dfe3e8;cursor:pointer;white-space:nowrap;overflow:hidden;"
+    "text-overflow:ellipsis}"
+    '.hdr-sugg li[data-on="1"]{background:rgba(255,255,255,.09);color:#f2f4f6}'
+    # The form is the positioning context for the dropdown, and it must not clip
+    # it — .hdr-search itself carries the opacity transition, so the list is a
+    # child of the form rather than a sibling.
+    ".hdr-search form,.hdr-search{position:relative}"
+)
+
+SUGGEST_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "remember whether suggestions are on",
+            "      searchUrl: t.searchUrl || '',",
+            "      searchUrl: t.searchUrl || '',\n"
+            "      suggest: !!t.suggest,",
+        ),
+        (
+            "suggestion state",
+            "  chooseEngine = (e) =>",
+            "  toggleSuggest = () => this.setTheme({ suggest: !this.theme().suggest });\n"
+            "  suggestAvailable() {\n"
+            "    return " + json.dumps(list(SEARCH_SUGGEST_KEYS))
+            + ".indexOf(this.theme().searchEngine) >= 0;\n"
+            "  }\n"
+            "  closeSuggest = () => {\n"
+            "    if (this._suggTimer) clearTimeout(this._suggTimer);\n"
+            "    this._suggTimer = null;\n"
+            "    if (this.state.suggItems && this.state.suggItems.length)\n"
+            "      this.setState({ suggItems: [], suggAt: -1 });\n"
+            "    else if (this.state.suggAt !== -1) this.setState({ suggAt: -1 });\n"
+            "  };\n"
+            "  askSuggest = (q) => {\n"
+            "    if (!q) return this.closeSuggest();\n"
+            "    this._suggFor = q;\n"
+            "    fetch('/api/suggest', {\n"
+            "      method: 'POST',\n"
+            "      headers: { 'Content-Type': 'application/json' },\n"
+            "      body: JSON.stringify({ engine: this.theme().searchEngine, q: q })\n"
+            "    }).then(r => r.ok ? r.json() : null).then(d => {\n"
+            "      // Dropped unless this is still the query being typed, so a\n"
+            "      // slow response cannot overwrite a newer one.\n"
+            "      if (!d || this._suggFor !== q) return;\n"
+            "      const items = (d.suggestions || []).slice(0, "
+            + str(SUGGEST_MAX) + ");\n"
+            "      this.setState({ suggItems: items, suggAt: -1 });\n"
+            "    }).catch(() => {});\n"
+            "  };\n"
+            "  searchInput = (e) => {\n"
+            "    const q = e.currentTarget.value.trim();\n"
+            "    if (!this.theme().suggest || !this.suggestAvailable()) return;\n"
+            "    if (this._suggTimer) clearTimeout(this._suggTimer);\n"
+            "    this._suggTimer = setTimeout(() => this.askSuggest(q), "
+            + str(SUGGEST_DEBOUNCE_MS) + ");\n"
+            "  };\n"
+            "  searchKey = (e) => {\n"
+            "    const items = this.state.suggItems || [];\n"
+            "    if (e.key === 'Escape') {\n"
+            "      // Close the list first; a second Escape is the native clear.\n"
+            "      if (items.length) { e.preventDefault(); this.closeSuggest(); }\n"
+            "      return;\n"
+            "    }\n"
+            "    if (!items.length) return;\n"
+            "    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {\n"
+            "      e.preventDefault();\n"
+            "      const at = this.state.suggAt;\n"
+            "      const step = e.key === 'ArrowDown' ? 1 : -1;\n"
+            "      const next = at + step < 0 ? items.length - 1\n"
+            "        : (at + step) % items.length;\n"
+            "      this.setState({ suggAt: next });\n"
+            "    }\n"
+            "  };\n"
+            "  pickSuggest = (e) => {\n"
+            "    // pointerdown, not click: click lands after blur has closed the list.\n"
+            "    e.preventDefault();\n"
+            "    const text = e.currentTarget.dataset.sugg || '';\n"
+            "    const input = this.rootRef.current\n"
+            "      && this.rootRef.current.querySelector('.hdr-search input[name=q]');\n"
+            "    if (input) input.value = text;\n"
+            "    this.closeSuggest();\n"
+            "    this.goSearch(text);\n"
+            "  };\n"
+            "  chooseEngine = (e) =>",
+        ),
+        (
+            "run the highlighted suggestion, or what was typed",
+            "  runSearch = (e) => {\n"
+            "    e.preventDefault();\n"
+            "    const tpl = this.searchTemplate();\n"
+            "    const input = e.currentTarget.querySelector('input[name=q]');\n"
+            "    const q = input ? input.value.trim() : '';\n"
+            "    if (!tpl || !q) return;\n"
+            "    const enc = encodeURIComponent(q).replace(/%20/g, '+');\n"
+            "    window.location.assign(tpl.replace('%s', enc));\n"
+            "  };",
+            "  goSearch = (q) => {\n"
+            "    const tpl = this.searchTemplate();\n"
+            "    if (!tpl || !q) return;\n"
+            "    const enc = encodeURIComponent(q).replace(/%20/g, '+');\n"
+            "    window.location.assign(tpl.replace('%s', enc));\n"
+            "  };\n"
+            "  runSearch = (e) => {\n"
+            "    e.preventDefault();\n"
+            "    const input = e.currentTarget.querySelector('input[name=q]');\n"
+            "    const items = this.state.suggItems || [];\n"
+            "    const at = this.state.suggAt;\n"
+            "    // A highlighted suggestion wins over the raw text.\n"
+            "    const q = (at >= 0 && items[at]) ? items[at]\n"
+            "      : (input ? input.value.trim() : '');\n"
+            "    this.closeSuggest();\n"
+            "    this.goSearch(q);\n"
+            "  };",
+        ),
+        (
+            "expose the suggestion list and its handlers",
+            "      runSearch: this.runSearch,",
+            "      runSearch: this.runSearch,\n"
+            "      toggleSuggest: this.toggleSuggest,\n"
+            "      searchInput: this.searchInput,\n"
+            "      searchKey: this.searchKey,\n"
+            "      closeSuggest: this.closeSuggest,\n"
+            "      pickSuggest: this.pickSuggest,\n"
+            "      suggestOn: th.suggest,\n"
+            "      suggestShown: !!(s.suggItems && s.suggItems.length),\n"
+            "      suggestAvailable: this.suggestAvailable(),\n"
+            "      suggestList: (s.suggItems || []).map((text, i) => ({\n"
+            "        text, on: i === s.suggAt ? '1' : '0'\n"
+            "      })),\n"
+            "      suggestTrack: 'position:relative;width:38px;height:20px;flex:none;"
+            "border-radius:20px;cursor:pointer;transition:background .16s ease;"
+            "background:' + (th.suggest ? 'var(--accent)' : 'rgba(255,255,255,.16)'),\n"
+            "      suggestKnob: 'position:absolute;top:2px;left:'"
+            " + (th.suggest ? '20px' : '2px')"
+            " + ';width:16px;height:16px;border-radius:50%;background:#fff;"
+            "transition:left .16s ease',",
+        ),
+        (
+            "wire the input and hang the list off the form",
+            '<input type="search" name="q" autocomplete="off" '
+            'aria-label="Search the web" placeholder="{{ searchHint }}">'
+            "</form>",
+            '<input type="search" name="q" autocomplete="off" '
+            'aria-label="Search the web" placeholder="{{ searchHint }}" '
+            'sc-camel-on-input="{{ searchInput }}" '
+            'sc-camel-on-key-down="{{ searchKey }}" '
+            'sc-camel-on-blur="{{ closeSuggest }}">'
+            '<sc-if value="{{ suggestShown }}" hint-placeholder-val="{{ false }}">'
+            '<ul class="hdr-sugg">'
+            '<sc-for list="{{ suggestList }}" as="sg" hint-placeholder-count="4">'
+            '<li data-sugg="{{ sg.text }}" data-on="{{ sg.on }}" '
+            'sc-camel-on-pointer-down="{{ pickSuggest }}">{{ sg.text }}</li>'
+            "</sc-for></ul></sc-if>"
+            "</form>",
+        ),
+        (
+            "a suggestions toggle in the panel",
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            "text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px\">"
+            "Mobile layout</div>",
+            '        <sc-if value="{{ suggestAvailable }}"'
+            ' hint-placeholder-val="{{ true }}">\n'
+            '          <div style="display:flex;align-items:center;'
+            'justify-content:space-between;margin-top:14px">\n'
+            '            <span style="font-size:13.5px;color:#dfe3e8">'
+            "Search suggestions</span>\n"
+            '            <span sc-camel-on-click="{{ toggleSuggest }}"'
+            ' style="{{ suggestTrack }}">'
+            '<span style="{{ suggestKnob }}"></span></span>\n'
+            "          </div>\n"
+            '          <div style="font-size:11.5px;color:#6d757e;margin-top:7px">'
+            "Sends what you type to the engine, through this server, as you"
+            " type it.</div>\n"
+            "        </sc-if>\n"
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            "text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px\">"
+            "Mobile layout</div>",
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
@@ -1940,10 +2159,19 @@ def apply_js_patches(body: str) -> str:
                            # After MOBILE_PATCHES: its anchors are the theme key
                            # and settings row that patch adds.
                            + SEARCH_ENGINE_PATCHES
+                           # Before SUGGEST_PATCHES: it inserts the form whose
+                           # input SUGGEST_PATCHES then wires up. Its own anchor
+                           # is the untouched <header>, so it does not need to
+                           # wait for anything.
+                           + SEARCH_PATCHES
+                           # After SEARCH_ENGINE_PATCHES and SEARCH_PATCHES: its
+                           # anchors are the runSearch body, the settings rows
+                           # and the search input those two leave behind.
+                           + SUGGEST_PATCHES
                            # Last: its anchors are what JS_PATCHES and
                            # CLIPBOARD_PATCHES leave behind.
                            + URL_TITLE_PATCHES + ENTER_SAVE_PATCHES
-                           + CAT_DELETE_PATCHES + SEARCH_PATCHES):
+                           + CAT_DELETE_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))
@@ -1979,7 +2207,7 @@ def patch_template(html: str) -> str:
     swipe = open(SWIPE_PATH, encoding="utf-8").read()
     tag = (
         HEAD_MARKUP
-        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + SEARCH_CSS
+        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + SEARCH_CSS + SUGGEST_CSS
         + ADD_BUTTON_CSS + ADD_LABEL_CSS
         + CARD_MARGIN_CSS
         + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS

@@ -9,6 +9,7 @@
   POST   /favicon        <- {"url": "..."}  fetch and cache that site's best icon
   POST   /icons/update   start an update from GitHub; 409 while one is running
   GET    /icons/status   progress and the last result
+  POST   /suggest        <- {"engine": "...", "q": "..."}  search suggestions
   GET    /healthz
 
 Deliberately stdlib-only: the whole job is to hold a few kilobytes of dashboard
@@ -31,6 +32,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import favicon as favicon_mod
 import icons as icons_mod
+import suggest as suggest_mod
 
 DATA_DIR = os.environ.get("FIREHOME_DATA", "/data")
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
@@ -235,6 +237,23 @@ class Handler(BaseHTTPRequestHandler):
             if not name:
                 return self._fail(404, "no usable icon found")
             return self._send(200, {"icon": "fav:" + name, "source": source})
+        if self.path == "/suggest":
+            # POST with a JSON body rather than GET ?q=, so the search terms stay
+            # out of the access log the way the favicon URL does.
+            try:
+                body = self._body()
+            except (ValueError, json.JSONDecodeError) as exc:
+                return self._fail(400, str(exc))
+            engine = body.get("engine")
+            query = body.get("q")
+            if not isinstance(engine, str) or not isinstance(query, str):
+                return self._fail(400, '"engine" and "q" are required')
+            items, err = suggest_mod.fetch(engine, query)
+            if err == "unknown engine":
+                return self._fail(400, err)
+            # An unreachable engine is not an error for the caller: the search
+            # box has to keep working, so it gets an empty list and a note.
+            return self._send(200, {"suggestions": items, "note": err})
         if self.path == "/icons/update":
             if not _icons.start():
                 return self._fail(409, "an update is already running")

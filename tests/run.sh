@@ -223,6 +223,31 @@ assert "e.preventDefault()" in tpl.split("runSearch = (e) =>")[1][:120], \
     "runSearch does not preventDefault first; a native submit would reload the page"
 assert "window.location.assign" in tpl, "runSearch does not navigate"
 print("ok    %d search engines offered, custom URL gated and handled" % len(keys))
+
+# Suggestions. Off unless asked for, since they send keystrokes off the box.
+assert "suggest: !!t.suggest" in tpl, "the suggestions preference is not persisted"
+assert "'/api/suggest'" in tpl, "suggestions do not go through the api proxy"
+# A stale response must be discarded, or a slow reply repopulates the list with
+# suggestions for a prefix the user has already typed past.
+assert "this._suggFor !== q" in tpl, \
+    "suggestion responses are not matched to the query that asked for them"
+assert "clearTimeout(this._suggTimer)" in tpl, "suggestion requests are not debounced"
+# pointerdown, not click: click fires after blur has already closed the list.
+assert 'sc-camel-on-pointer-down="{{ pickSuggest }}"' in tpl, \
+    "suggestion rows use click, which lands after the list has closed"
+assert "ArrowDown" in tpl and "ArrowUp" in tpl, "suggestions have no keyboard navigation"
+# Only the engines with a real endpoint may offer the toggle; api/suggest.py is
+# the authority on which those are.
+suggest_py = open(os.path.join(root, "api", "suggest.py"), encoding="utf-8").read()
+api_engines = set(re.findall(r'^    "([a-z]+)": "https://', suggest_py, re.M))
+ui_keys = re.search(r"^SEARCH_SUGGEST_KEYS = \(([^)]*)\)", localize_py, re.M).group(1)
+ui_engines = set(re.findall(r'"([a-z]+)"', ui_keys))
+assert ui_engines and ui_engines <= api_engines, (
+    "the dashboard offers suggestions for %s, which api/suggest.py cannot serve"
+    % sorted(ui_engines - api_engines)
+)
+print("ok    suggestions are opt-in, debounced and race-guarded (%d engines)"
+      % len(ui_engines))
 assert ".hdr-search:focus-within{opacity:1}" in tpl, \
     "search bar would fade out while being typed in"
 # The strip is the only trigger: revealing from the header block as well put a
@@ -598,6 +623,10 @@ python3 "$ROOT/tests/icons_test.py"
 echo
 echo "== site icon fetcher (offline) =="
 python3 "$ROOT/tests/favicon_test.py"
+
+echo
+echo "== search suggestions (offline) =="
+python3 "$ROOT/tests/suggest_test.py"
 
 echo
 echo "== icon -> title suggestion =="

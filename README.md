@@ -168,6 +168,16 @@ actually bite you.
   whether a host answers and serves an image. It is bounded rather than blocked —
   http(s) only, 6s timeouts, 256 KB of HTML, 512 KB per icon, at most six
   candidates, and bytes are stored only if they parse as an image.
+- **Search suggestions send every keystroke to the engine.** Off by default, and
+  the only feature here that talks to a third party while you use the dashboard
+  rather than while you configure it. With it on, each debounced keystroke goes
+  to `/api/suggest`, which fetches DuckDuckGo, Google or Bing server-side — so
+  the engine sees your server's address rather than your browser's, but it does
+  see what you type, before you press Enter. The proxy takes an engine *key*,
+  not a URL, so unlike the icon fetcher it cannot be pointed at an arbitrary
+  host; queries are capped at 200 characters and responses at 64 KB. Self-hosted
+  engines get no toggle, since a SearXNG instance needs its own JSON API and
+  answers in a different shape.
 - **Update runs are unauthenticated too**, so anyone on the LAN can make the
   container fetch from GitHub — and the first run pulls ~690 raster files, around
   28 MB. Concurrent runs are refused, downloads are capped at 1 MB per file and

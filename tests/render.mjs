@@ -266,6 +266,78 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
         submitted === expected, submitted || 'no navigation');
     }
 
+    // Suggestions. The proxy is stubbed so this does not need the api container
+    // or the internet — what is being checked is the dropdown, not the engine.
+    await page.route('**/api/suggest', (r) => r.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ suggestions: ['alpha one', 'beta two', 'gamma three'] }),
+    }));
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.hover('.hdr-search');
+    await page.waitForTimeout(150);
+    await page.click('.hdr-search input');
+    await page.type('.hdr-search input', 'alph', { delay: 30 });
+    await page.waitForTimeout(700);
+    check(`${label}: suggestions stay off until asked for`,
+      await page.locator('.hdr-sugg').count() === 0);
+
+    // Turn them on, then check the list, the keyboard and what Enter uses.
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.hover('.page-wrap > header');
+    await page.waitForTimeout(200);
+    await page.click('button[title="Settings"]');
+    await page.waitForTimeout(400);
+    await page.locator('span:has-text("Search suggestions")').first()
+      .locator('xpath=following-sibling::span[1]').click();
+    await page.waitForTimeout(250);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+    await page.hover('.hdr-search');
+    await page.waitForTimeout(150);
+    await page.click('.hdr-search input');
+    await page.type('.hdr-search input', 'alph', { delay: 30 });
+    await page.waitForTimeout(800);
+    const rows = await page.locator('.hdr-sugg li').allTextContents();
+    check(`${label}: suggestions appear once enabled`,
+      rows.join('|') === 'alpha one|beta two|gamma three', rows.join('|'));
+    // The list overlays the header, so it must not be clipped by the strip.
+    const overlaps = await page.evaluate(() => {
+      const ul = document.querySelector('.hdr-sugg');
+      const hdr = document.querySelector('.page-wrap > header');
+      if (!ul || !hdr) return false;
+      const a = ul.getBoundingClientRect(), b = hdr.getBoundingClientRect();
+      return a.height > 40 && a.bottom > b.top;
+    });
+    check(`${label}: the dropdown draws over the header, unclipped`, overlaps);
+
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(200);
+    check(`${label}: ArrowDown highlights the first suggestion`,
+      (await page.locator('.hdr-sugg li[data-on="1"]').textContent()) === 'alpha one');
+    await page.keyboard.press('ArrowUp');
+    await page.waitForTimeout(200);
+    check(`${label}: ArrowUp from the first wraps to the last`,
+      (await page.locator('.hdr-sugg li[data-on="1"]').textContent()) === 'gamma three');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+    check(`${label}: Escape closes the list`,
+      await page.locator('.hdr-sugg').count() === 0);
+    check(`${label}: ...without clearing what was typed`,
+      (await page.inputValue('.hdr-search input')) === 'alph');
+
+    // Enter on a highlighted suggestion must search that, not the typed prefix.
+    await page.type('.hdr-search input', 'a', { delay: 30 });
+    await page.waitForTimeout(800);
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(200);
+    submitted = null;
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1200);
+    check(`${label}: Enter searches the highlighted suggestion`,
+      submitted === 'https://duckduckgo.com/?q=alpha+one', submitted || 'no navigation');
+    await page.unroute('**/api/suggest');
+
     for (const host of ['**duckduckgo.com**', '**google.com**', '**searx.lan**']) {
       await page.unroute(host, catchNav);
     }
@@ -283,6 +355,7 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
         const t = JSON.parse(raw);
         delete t.searchEngine;
         delete t.searchUrl;
+        delete t.suggest;
         localStorage.setItem('fireHome.theme', JSON.stringify(t));
       } catch { localStorage.removeItem('fireHome.theme'); }
     });
