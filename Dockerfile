@@ -10,7 +10,7 @@ RUN python localize.py firehome.html patched.html \
 # Stage 2: static server. Nothing but nginx, the page and the icon set.
 FROM nginx:1.27-alpine
 
-LABEL org.opencontainers.image.title="firehome" \
+LABEL org.opencontainers.image.title="Flame++" \
       org.opencontainers.image.description="LAN-only self-hosted homepage"
 
 # index.html plus assets/ — the fonts and JavaScript the loader used to decode

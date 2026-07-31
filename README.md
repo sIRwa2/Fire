@@ -1,98 +1,88 @@
-# firehome
+# Flame++
 
-A self-hosted homepage, served from a container with its config stored
-server-side. The design follows [Flame](https://github.com/pawelmalak/flame).
+A self-hosted homepage for a home network: your apps and bookmarks, a web search
+bar, and config stored server-side so it follows you to any browser. The design
+follows [Flame](https://github.com/pawelmalak/flame).
+
+Everything is served from one container on your LAN. It reaches the internet only
+when you ask it to — see [Risks and trade-offs](#risks-and-trade-offs).
+
+## Install
+
+You need Docker with the Compose plugin, and nothing else.
+
+```sh
+git clone <this-repo> flameplusplus
+cd flameplusplus
+docker compose up -d --build
+```
+
+Open **`http://<host-ip>:8080/`**. That's it — the dashboard starts empty, and you
+add apps and bookmarks from the page itself.
+
+To listen somewhere other than every interface on port 8080:
+
+```sh
+FIREHOME_BIND=127.0.0.1 docker compose up -d --build            # this host only
+FIREHOME_BIND=192.168.1.50 FIREHOME_PORT=80 docker compose up -d --build
+```
+
+<details>
+<summary>What that command actually did</summary>
+
+Built two images, created the `firehome-data` volume for your config, and started
+the stack. The web container waits for the config store to report healthy before
+nginx accepts requests, so the first page load is never a race.
+
+`--build` is not optional, here or when updating. The storage shim, layout CSS,
+search bar and favicon links are injected into the page at image-build time, so a
+plain `docker compose up -d` would restart the old image without them.
+
+</details>
 
 ## Update
 
-After pulling changes on the docker box:
-
 ```sh
-git pull && docker compose up -d --build && ./verify.sh
+git pull && docker compose up -d --build
 ```
 
-`--build` is not optional. The storage shim, favicon links and layout CSS are
-injected into the page at image-build time, so a plain `docker compose up -d`
-restarts the old image without them.
+Your apps, bookmarks and settings live in a Docker volume, not in the image, so
+they survive rebuilds untouched.
 
-## First run
-
-Same command. It builds both images, creates the `firehome-data` volume and
-starts the stack; `firehome` waits for the config store to report healthy before
-nginx comes up. Then open `http://<host-ip>:8080/`.
+## Uninstall
 
 ```sh
-FIREHOME_BIND=127.0.0.1 docker compose up -d              # this host only
-FIREHOME_BIND=192.168.1.50 FIREHOME_PORT=80 docker compose up -d
+docker compose down          # stop, keep your config
+docker compose down -v       # stop and delete config, history and icon updates
 ```
 
 ## Checking it works
 
-```sh
-./verify.sh                              # container + http + config-store checks
-BASE=http://192.168.0.108:8080 ./verify.sh
-./tests/run.sh                           # build-time checks; python3 + node, no Docker
-node tests/render.mjs http://192.168.0.108:8080   # real WebKit + Chromium; needs playwright
-node tests/lock-state.mjs http://192.168.0.108:8080   # what the lock hides; needs playwright
-node tests/lock-persist.mjs http://192.168.0.108:8080 # that the lock survives a reload
-node tests/theme-select.mjs http://192.168.0.108:8080 # the theme dropdown
-node tests/font-sizes.mjs http://192.168.0.108:8080   # each size control in isolation
-node tests/theme-persist.mjs http://192.168.0.108:8080 # theme + colour pickers persist
-node tests/mobile.mjs http://192.168.0.108:8080       # the three mobile layouts
-node tests/header-swipe.mjs http://192.168.0.108:8080 # swipe-to-reveal on a phone
-node tests/cards.mjs http://192.168.0.108:8080        # app card padding + alignment
-node tests/url-title.mjs http://192.168.0.108:8080    # URL -> Title in the real dialog
-```
-
-`verify.sh` is non-destructive — its config write uses a scratch key and removes
-it afterwards. `tests/render.mjs` is the one that confirms the page actually
-*renders*, in Safari's own engine; it stubs the config per-page so the deployed
-dashboard is neither read nor written. It needs playwright:
+Optional. `./verify.sh` covers the common case — containers up, page served,
+config store readable and writable:
 
 ```sh
-npm install playwright && npx playwright install --with-deps webkit chromium
+./verify.sh
+BASE=http://192.168.0.108:8080 ./verify.sh    # from another machine
 ```
 
-Still worth doing by hand: load the same URL on a second device and check your
-config follows you.
+It is non-destructive: its config write uses a scratch key and removes it
+afterwards. For the full test suite, see [Testing](#testing).
 
-## Starting clean
+## Starting over
 
-A clean dashboard is genuinely empty. `localize.py` rewrites the bundle's
-`defaultApps()` and `defaultGroups()` to return `[]`, dropping the 12
-`*.example.com` demo apps and 4 bookmark groups it shipped with.
+A fresh install is already empty — the upstream bundle's 12 `*.example.com` demo
+apps and 4 bookmark groups are stripped at build time. To wipe a dashboard you
+have been using:
 
-```sh
-fireHomeStorage.reset()                              # browser console, incl. theme
-curl -X DELETE http://<host-ip>:8080/api/config      # shell; snapshots first
-docker compose down -v && docker compose up -d --build   # also drops history
-```
+| | |
+| --- | --- |
+| **Settings → Reset apps & bookmarks** | Empties the dashboard on every device. |
+| `curl -X DELETE http://<host-ip>:8080/api/config` | Same, from a shell. Snapshots to `/data/history/` first. |
+| `docker compose down -v` | Deletes the volumes outright, history and icon updates included. |
 
-**Rebuilding is not enough on its own.** Emptying the defaults only changes what
-the page falls back to; placeholders already written into the stored config stay
-until you wipe it. So the first time, rebuild *and* reset:
-
-```sh
-docker compose up -d --build && curl -X DELETE http://<host-ip>:8080/api/config
-```
-
-Then reload. The dashboard's own "Reset to defaults" button now also empties
-rather than restoring demo data, and writes through to the server so it applies
-on every device.
-
-The "Add application" and "New category" buttons have no dashed outline and no
-tinted square behind the `+`, in every state. Only their visibility and the
-`EMPTY_ADD_BUTTON_OFFSET` (24px) drop are scoped to an empty grid — once apps
-exist, `.add-app` shares a row with real cards and a top margin would break the
-alignment.
-
-They're otherwise hover-revealed, and that reveal is made robust against old
-Safari: the page pairs `:hover` with `:focus-visible` in one selector list, which
-Safari below 15.4 discards whole. See [DOCKER.md](DOCKER.md#the-two-add-buttons).
-
-The add/edit dialog's URL field keeps a bare `URL` placeholder. The dialog has no
-labels — every field relies on its placeholder — so dropping the attribute
-outright would leave an unlabelled box.
+See [DOCKER.md](DOCKER.md#the-two-add-buttons) for the details of how the empty
+state is drawn.
 
 ## Updating the icon set
 
@@ -112,8 +102,11 @@ options that shipped with the page, plus:
 
 | | |
 | --- | --- |
+| **Search engine** | DuckDuckGo, Google, Bing, Startpage, or a URL of your own — SearXNG, Whoogle, anything with a query parameter. `%s` marks where the query goes. |
+| **Search suggestions** | Off by default. On, each keystroke is sent to the engine through this server. See [Risks](#third-party-content). |
 | **Open links in a new tab** | On by default. Applies to both apps and bookmarks. |
 | **Mobile layout** | Icon and text, icons only, or text only — on screens under 768px. |
+| **Keyboard shortcuts** | Listed in the panel: `L` lock, `A` add application, `S` settings, `Space` focus the search bar. Ignored while typing. |
 | **Font sizes** | Five controls: section headings, application name and description, bookmark category and name. Everything except the date and greeting. |
 | **Show hover controls when locked** | Off by default, so locking hides the add/edit/delete affordances. See [DOCKER.md](DOCKER.md#what-the-lock-actually-locks). |
 | *(the lock itself)* | The padlock in the header is remembered, so it survives a reload and applies on every browser. |
@@ -211,6 +204,36 @@ read-only root filesystem and no published port — reachable only through nginx
 That limits what a bug in it can reach; it does not make the endpoints safe to
 expose. Don't port-forward this.
 
+## Testing
+
+Not needed to run the dashboard. `./verify.sh` (above) is the one worth knowing.
+
+```sh
+./tests/run.sh          # build-time + api checks; python3 + node, no Docker needed
+```
+
+The rest drive a real browser and need playwright:
+
+```sh
+npm install playwright && npx playwright install --with-deps webkit chromium
+node tests/render.mjs http://192.168.0.108:8080
+```
+
+`render.mjs` is the broad one — it confirms the page renders in WebKit and
+Chromium, and covers layout, the search bar, the engine picker, suggestions and
+the keyboard shortcuts. It stubs the config per-page, so the deployed dashboard is
+neither read nor written. The others each isolate one behaviour:
+
+| | |
+| --- | --- |
+| `lock-state.mjs`, `lock-persist.mjs` | What the lock hides, and that it survives a reload. |
+| `theme-select.mjs`, `theme-persist.mjs`, `font-sizes.mjs` | The theme dropdown, the colour pickers, each size control. |
+| `mobile.mjs`, `header-swipe.mjs` | The three mobile layouts, and swipe-to-reveal on a phone. |
+| `cards.mjs`, `url-title.mjs` | App card padding and alignment; URL → Title in the real dialog. |
+
+Worth doing by hand either way: load the same URL on a second device and check
+your config follows you.
+
 ## What's here
 
 | Path | |
@@ -223,8 +246,8 @@ expose. Don't port-forward this.
 | `api/icons.py` | Icon updates from the upstream repo, diffed by git blob sha. |
 | `nginx.conf`, `Dockerfile`, `docker-compose.yml` | Serving and orchestration. |
 | `favicon.svg` | The site icon, and the source of truth for it. Replace it and re-run `tools/make-favicon.mjs` to regenerate the raster fallbacks. |
+| `api/suggest.py` | Search-suggestion proxy. Fetches the engine server-side; off unless enabled. |
 | `svg/` | The homarr-labs icon set, served at `/icons/` so nothing loads from a CDN. |
-| `iterm/` | iTerm colour schemes; the pool the bundle's 18 built-in themes were drawn from. Not used at runtime. |
 | `verify.sh`, `tests/` | Post-deploy and build-time checks. |
 
 ## After re-exporting firehome.html
@@ -240,3 +263,13 @@ on.
 
 See [DOCKER.md](DOCKER.md) for how the storage, layout, favicon and
 self-containment pieces actually work.
+
+## Credits and licence
+
+Flame++ is MIT licensed — see [LICENSE](LICENSE).
+
+- The page design follows [Flame](https://github.com/pawelmalak/flame) by Paweł
+  Malak, MIT licensed.
+- Icons are the [homarr-labs dashboard-icons](https://github.com/homarr-labs/dashboard-icons)
+  set, Apache-2.0. The logos they depict remain the property of their owners and
+  are included for identification only.
