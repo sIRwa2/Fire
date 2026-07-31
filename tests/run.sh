@@ -248,6 +248,43 @@ assert ui_engines and ui_engines <= api_engines, (
 )
 print("ok    suggestions are opt-in, debounced and race-guarded (%d engines)"
       % len(ui_engines))
+
+# Keyboard shortcuts. Bare letters are only safe behind the typing guard, so the
+# guard is what is pinned here rather than the individual keys.
+assert "this._typing = (el)" in tpl, "the shortcuts have no typing guard"
+guard = tpl.split("this._typing = (el)")[1][:320]
+for shape in ("isContentEditable", "INPUT", "TEXTAREA", "SELECT"):
+    assert shape in guard, (
+        "the typing guard ignores %s, so a shortcut would fire mid-edit" % shape
+    )
+# Modifiers must pass through or Ctrl-L, Ctrl-A and Cmd-S stop working.
+shortcut_block = tpl.split("this._onKey = (e) =>")[1][:1400]
+for mod in ("altKey", "ctrlKey", "metaKey", "shiftKey"):
+    assert "!e." + mod in shortcut_block, \
+        "%s is not excluded, so the browser's own shortcut is hijacked" % mod
+assert "!e.isComposing" in shortcut_block, "a letter mid-IME-composition would fire"
+assert "!this.state.modal" in shortcut_block, \
+    "shortcuts fire with a dialog open, where Escape and Enter own the keyboard"
+# `a` is gated on the lock, which disables the add button via pointer-events.
+assert "!this.state.locked" in shortcut_block, \
+    "the add shortcut ignores the lock, reaching past a disabled control"
+# Space must not shadow a focused button's native activation.
+assert "closest('button')" in shortcut_block.split("e.key === ' '")[1][:200], \
+    "space is claimed even on a focused button, breaking its native activation"
+# An invisible shortcut is a missing feature, so the panel has to list them, and
+# the list has to match the keys that are actually bound.
+binds = re.search(r"^KEYBINDS = \((.*?)^\)", localize_py, re.S | re.M).group(1)
+listed = re.findall(r'\("([^"]+)", "([^"]+)"\)', binds)
+assert len(listed) == 4, "expected 4 documented shortcuts, found %s" % listed
+for key, label in listed:
+    assert ">%s</kbd>" % key in tpl, "shortcut %s is not shown in the panel" % key
+    assert label in tpl, "shortcut %s has no description in the panel" % key
+# Every letter shown must be handled, or the panel promises something dead.
+for key, _label in listed:
+    needle = "e.key === ' '" if key == "Space" else "k === '%s'" % key.lower()
+    assert needle in shortcut_block, \
+        "the panel lists %s but nothing handles it" % key
+print("ok    keyboard shortcuts guarded, and all %d listed in the panel" % len(listed))
 assert ".hdr-search:focus-within{opacity:1}" in tpl, \
     "search bar would fade out while being typed in"
 # The strip is the only trigger: revealing from the header block as well put a

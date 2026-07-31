@@ -1824,6 +1824,110 @@ MOBILE_PATCHES = tuple(
 )
 
 
+# ── Keyboard shortcuts ──────────────────────────────────────────────────────
+# l locks, a adds an application, s opens Settings, Space focuses the search bar.
+#
+# Hung off the existing window keydown handler (the one that owns Escape and
+# Enter) rather than a second listener, so there is one place where a key can be
+# swallowed.
+#
+# Bare letters are only safe if they cannot fire while the user is typing, and
+# this page has more typing surfaces than it looks: the two section headings are
+# contentEditable when unlocked, the add/edit dialog has four fields plus an
+# icon search, Settings has number inputs, selects and the custom search URL,
+# and the search bar itself. _typing() covers all of them by shape rather than
+# by name — input/textarea/select or anything contentEditable — because the next
+# field someone adds will not be on a list here.
+#
+# The other guards:
+#
+#   * modifiers are excluded, so Ctrl-L (address bar) and Cmd-A still work;
+#   * isComposing, because a letter mid-IME-composition is not a shortcut;
+#   * a dialog being open suppresses everything, since Escape and Enter own the
+#     keyboard at that point;
+#   * `a` respects the lock. LOCKED_CSS gives the add button
+#     pointer-events:none, so opening the dialog by keyboard would be reaching
+#     past a control the lock has deliberately disabled.
+#
+# Space is the awkward one: it is the native activation key for a focused
+# button, so it is only claimed when focus is not on one. Otherwise tabbing to
+# the lock button and pressing Space would focus the search bar instead of
+# toggling the lock. preventDefault stops the page scrolling.
+KEYBINDS = (
+    ("L", "Lock or unlock the layout"),
+    ("A", "Add an application"),
+    ("S", "Open settings"),
+    ("Space", "Focus the search bar"),
+)
+
+
+def _keybind_rows():
+    """The shortcut list for the settings panel."""
+    return "\n".join(
+        '          <div style="display:flex;align-items:center;gap:10px;'
+        'margin-top:7px">\n'
+        '            <kbd style="min-width:20px;padding:2px 7px;border-radius:5px;'
+        "border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);"
+        "font-family:inherit;font-size:11.5px;font-weight:700;color:#dfe3e8;"
+        'text-align:center">%s</kbd>\n'
+        '            <span style="font-size:12.5px;color:#9aa3ad">%s</span>\n'
+        "          </div>" % (key, label)
+        for key, label in KEYBINDS
+    )
+
+
+KEYBIND_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "list the shortcuts in the panel",
+            '        <div style="display:flex;align-items:center;'
+            "justify-content:space-between;margin-top:22px;padding-top:18px;"
+            'border-top:1px solid rgba(255,255,255,.08)">\n'
+            '          <button sc-camel-on-click="{{ resetDefaults }}"',
+            '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
+            "text-transform:uppercase;color:#9aa3ad;margin:22px 0 4px\">"
+            "Keyboard shortcuts</div>\n"
+            + _keybind_rows()
+            + "\n"
+            '        <div style="font-size:11.5px;color:#6d757e;margin-top:9px">'
+            "Ignored while typing, and with a modifier held.</div>\n"
+            '        <div style="display:flex;align-items:center;'
+            "justify-content:space-between;margin-top:22px;padding-top:18px;"
+            'border-top:1px solid rgba(255,255,255,.08)">\n'
+            '          <button sc-camel-on-click="{{ resetDefaults }}"',
+        ),
+        (
+            "shortcuts on the window key handler",
+            """    this._onKey = (e) => {
+      if (e.key === 'Escape') this.setState({ modal: null, themeOpen: false, ctx: null });""",
+            """    this._typing = (el) => {
+      if (!el) return false;
+      if (el.isContentEditable) return true;
+      const tag = el.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    };
+    this._onKey = (e) => {
+      if (e.key === 'Escape') this.setState({ modal: null, themeOpen: false, ctx: null });
+      if (!e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.isComposing
+          && !this.state.modal && !this._typing(e.target)) {
+        const k = e.key.toLowerCase();
+        if (k === 'l') { e.preventDefault(); this.toggleLock(); }
+        if (k === 's') { e.preventDefault(); this.setState({ themeOpen: true, themePos: { x: 0, y: 0 } }); }
+        // The lock disables the add button, so the shortcut must not bypass it.
+        if (k === 'a' && !this.state.locked) { e.preventDefault(); this.openAddApp(); }
+        // Space activates a focused button natively; only claim it otherwise.
+        if (e.key === ' ' && !(e.target && e.target.closest && e.target.closest('button'))) {
+          const box = this.rootRef.current
+            && this.rootRef.current.querySelector('.hdr-search input[name=q]');
+          if (box) { e.preventDefault(); box.focus(); }
+        }
+      }""",
+        ),
+    )
+)
+
+
 def _engine_options():
     return "\n".join(
         '            <option value="%s">%s</option>' % (key, label)
@@ -2171,6 +2275,9 @@ def apply_js_patches(body: str) -> str:
                            # Last: its anchors are what JS_PATCHES and
                            # CLIPBOARD_PATCHES leave behind.
                            + URL_TITLE_PATCHES + ENTER_SAVE_PATCHES
+                           # After ENTER_SAVE_PATCHES: it extends the handler
+                           # body that patch rewrites.
+                           + KEYBIND_PATCHES
                            + CAT_DELETE_PATCHES):
         n = body.count(old)
         if n != 1:

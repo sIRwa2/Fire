@@ -428,6 +428,85 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     check(`${label}: no failed requests`, broken.length === 0, broken[0]);
     check(`${label}: {{ }} placeholders absorbed (needs nginx's empty_gif rule)`,
       placeholders.length === 0, placeholders[0]);
+
+    // Keyboard shortcuts. The guards matter more than the keys: a bare letter
+    // firing mid-edit would corrupt a heading, and swallowing a modifier combo
+    // would break the browser's own shortcuts.
+    await page.goto(base, { waitUntil: 'networkidle' });
+    const kbState = () => page.evaluate(() => ({
+      locked: document.querySelector('[data-locked]')?.dataset.locked,
+      settings: !!document.querySelector('select[data-k="searchEngine"]'),
+      dialog: !!document.querySelector('input[placeholder="URL"]'),
+      focus: document.activeElement?.name || document.activeElement?.tagName,
+    }));
+    await page.click('body', { position: { x: 1400, y: 940 } });
+    await page.keyboard.press('l');
+    await page.waitForTimeout(400);
+    check(`${label}: l locks the layout`, (await kbState()).locked === '1');
+    await page.keyboard.press('l');
+    await page.waitForTimeout(400);
+    check(`${label}: l unlocks it again`, (await kbState()).locked === '0');
+    await page.keyboard.press('s');
+    await page.waitForTimeout(450);
+    check(`${label}: s opens Settings`, (await kbState()).settings);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(350);
+    await page.keyboard.press('a');
+    await page.waitForTimeout(450);
+    check(`${label}: a opens the add dialog`, (await kbState()).dialog);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(350);
+    await page.keyboard.press(' ');
+    await page.waitForTimeout(350);
+    check(`${label}: space focuses the search bar`, (await kbState()).focus === 'q');
+
+    // Typing must never trigger a shortcut. The heading is contentEditable, so
+    // "alpha lists" would otherwise lock, add an app and focus the search box.
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.click('h2[data-k="appsTitle"]');
+    await page.waitForTimeout(200);
+    await page.keyboard.type('alpha lists', { delay: 20 });
+    await page.waitForTimeout(300);
+    const afterTyping = await kbState();
+    check(`${label}: typing in a heading triggers no shortcut`,
+      afterTyping.locked === '0' && !afterTyping.settings && !afterTyping.dialog,
+      JSON.stringify(afterTyping));
+    check(`${label}: ...and the text lands in the heading`,
+      (await page.textContent('h2[data-k="appsTitle"]')).includes('alpha lists'));
+
+    // Modifier combos belong to the browser.
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.click('body', { position: { x: 1400, y: 940 } });
+    for (const combo of ['Control+l', 'Control+a', 'Control+s']) {
+      await page.keyboard.press(combo);
+      await page.waitForTimeout(200);
+    }
+    const afterCombos = await kbState();
+    check(`${label}: ctrl combos are not hijacked`,
+      afterCombos.locked === '0' && !afterCombos.settings && !afterCombos.dialog,
+      JSON.stringify(afterCombos));
+
+    // The lock disables the add button, so the shortcut must respect it.
+    await page.keyboard.press('l');
+    await page.waitForTimeout(400);
+    await page.keyboard.press('a');
+    await page.waitForTimeout(400);
+    check(`${label}: a does nothing while locked`, !(await kbState()).dialog);
+
+    // Space on a focused button must activate it, not steal focus.
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.hover('.page-wrap > header');
+    await page.waitForTimeout(250);
+    await page.locator('.hdr-actions button').nth(1).focus();
+    await page.waitForTimeout(200);
+    await page.keyboard.press(' ');
+    await page.waitForTimeout(450);
+    const afterSpaceBtn = await kbState();
+    check(`${label}: space on the lock button toggles it, not the search bar`,
+      afterSpaceBtn.locked === '1' && afterSpaceBtn.focus !== 'q',
+      JSON.stringify(afterSpaceBtn));
+    await page.goto(base, { waitUntil: 'networkidle' });
+
     if (populated) {
       // The cards' inline padding is overridden to 0 on all sides, which left the
       // hover highlight flush against the content; CARD_MARGIN_CSS puts it back,
