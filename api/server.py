@@ -7,8 +7,9 @@
   DELETE /config   wipe — "start clean"
   GET    /icons          -> {"icons": [...], "count": N, "status": {...}}
   POST   /favicon        <- {"url": "..."}  fetch and cache that site's best icon
-  POST   /icons/update   start an update from GitHub; 409 while one is running
-  GET    /icons/status   progress and the last result
+  POST   /icons/update   <- {"library": "..."}  start an update; 409 if one runs
+  POST   /icons/config   <- {"preference": [...], "enabled": {...}}
+  GET    /icons/status   progress, the last result, and the library list
   POST   /suggest        <- {"engine": "...", "q": "..."}  search suggestions
   GET    /healthz
 
@@ -255,10 +256,38 @@ class Handler(BaseHTTPRequestHandler):
             # box has to keep working, so it gets an empty list and a note.
             return self._send(200, {"suggestions": items, "note": err})
         if self.path == "/icons/update":
-            if not _icons.start():
+            # The library is named in the body; a missing one means the set the
+            # user prefers, which is what the old bodyless route effectively did.
+            try:
+                body = self._body()
+            except (ValueError, json.JSONDecodeError):
+                body = {}
+            key = body.get("library") or _icons.preference()[0]
+            try:
+                started = _icons.start(key)
+            except ValueError as exc:
+                return self._fail(400, str(exc))
+            if not started:
                 return self._fail(409, "an update is already running")
-            log("icons: update requested by %s" % self.address_string())
+            log("icons: update of %s requested by %s" % (key, self.address_string()))
             return self._send(200, _icons.status())
+        if self.path == "/icons/config":
+            try:
+                body = self._body()
+            except (ValueError, json.JSONDecodeError) as exc:
+                return self._fail(400, str(exc))
+            preference = body.get("preference")
+            enabled = body.get("enabled")
+            if preference is not None and not isinstance(preference, list):
+                return self._fail(400, '"preference" must be a list of keys')
+            if enabled is not None and not isinstance(enabled, dict):
+                return self._fail(400, '"enabled" must be an object')
+            if preference is None and enabled is None:
+                return self._fail(400, 'nothing to set: pass "preference" or "enabled"')
+            try:
+                return self._send(200, _icons.set_config(preference, enabled))
+            except OSError as exc:
+                return self._fail(500, "could not persist icon settings: %s" % exc)
         if self.path != "/config":
             return self._fail(404, "not found")
         try:
@@ -300,6 +329,16 @@ def main():
     # Repairs icons written before they were made world-readable, so an existing
     # volume recovers on restart instead of needing to be recreated.
     _icons.ensure_readable()
+    # nginx looks in the resolved directory first, so it has to exist before the
+    # first request. Rebuilt on every start rather than only after an update: a
+    # library removed from the image, or a volume restored from a backup taken
+    # under a different preference, both leave it stale.
+    try:
+        linked = _icons.resolve()
+        log("icons: %d override(s) resolved, libraries preferred as %s"
+            % (linked, ", ".join(_icons.preference())))
+    except OSError as exc:
+        log("icons: could not build the resolved set: %r" % (exc,))
     server = ThreadingHTTPServer(("", PORT), Handler)
     server.daemon_threads = True
     log("firehome-config listening on :%d, data=%s" % (PORT, DATA_DIR))

@@ -922,11 +922,76 @@ to Custom.
 
 ## Icon updates
 
-The dashboard can pull new and changed icons from
-[homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons)
-from the settings panel: **Settings → Icons → Check for updates**. It tracks
-`main`, and only ever runs when you click — there is no background polling, so a
-normal page load still makes no outbound request.
+The dashboard can pull new and changed icons from any of three libraries from the
+settings panel: **Settings → Icons**. Each tracks its own default branch, and each
+only ever runs when you click **Update** on its row — there is no background
+polling, so a normal page load still makes no outbound request.
+
+### Three libraries, layered
+
+| key | repo | ships in the image |
+| --- | --- | --- |
+| `homarr` | [homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons) | yes — 3,233 files in `svg/` |
+| `selfhst` | [selfhst/icons](https://github.com/selfhst/icons) | no — 7,528 icons, downloaded on request |
+| `mdi` | [Templarian/MaterialDesign](https://github.com/Templarian/MaterialDesign) | no — 7,447 generic UI glyphs |
+
+**They overlap, so picking one would throw thousands of icons away.** Only 1,354
+of selfhst's names also exist in homarr's: 1,940 icons are homarr-only and 5,730
+selfhst-only. So all of them can be installed at once and a **preference order**
+decides who wins a name more than one provides. `POST /api/icons/config` persists
+that order and the enabled flags, alongside the rest of the icon state.
+
+**Only homarr is baked in.** Another 35 MB of svg in the repo and the image, for a
+set most installs will not switch to, is not worth it — and a fresh install needs
+*a* full set offline, not all three. selfhst is nonetheless preferred over homarr
+by default: it is the larger and better-maintained set, so once downloaded it
+should win a shared name, and until then it contributes nothing and homarr answers
+everything.
+
+**Turning a set off hides it from the picker without breaking what already uses
+it.** A disabled library stops winning shared names and disappears from icon
+search, but any name only it provides is still served, so an app already pointing
+at one of its icons keeps rendering. Deleting a set is not offered; that is what
+`docker compose down -v` does.
+
+### How nginx resolves a name it cannot reason about
+
+`/icons/plex.svg` is a bare name, and nginx's config is static — it cannot read a
+preference order out of a JSON file. So the api resolves it instead, into a flat
+`resolved/` directory on the volume that nginx checks *first*:
+
+```
+try_files /icons-live/resolved/$icon /icons-live/$icon /icons/$icon =404;
+```
+
+`resolved/` holds **only the overrides**, hardlinked, not a copy of every icon. A
+winner already sitting in one of the two fallbacks needs no entry there, and
+leaving it out is what keeps the directory to a handful of links: linking the whole
+baked set in would *copy* rather than link — the image's icons are a bind mount, so
+a hardlink to them crosses devices — putting 48 MB in the volume and rewriting it
+on every start, since a copy is never `samefile()` with its source.
+
+The two fallbacks are ordered writable-then-baked, which no preference can
+contradict, because **both hold the same library's icons**. `homarr` was the only
+library when the image was first built, so its set ships flat in the icon root
+rather than in a subdirectory, and every download from before libraries existed
+landed flat in the overlay. `FLAT_LIBRARY` in `api/icons.py` attributes those files
+to homarr, which is what makes its count right and its diff work — without it, its
+first update would re-download all 4,009 icons instead of the 780 it actually
+needs. Adding a `try_files` line for a second library would break that property:
+its position there is fixed at build time and the preference is not, which is
+exactly why the resolving happens in Python.
+
+`resolve()` runs on every api start as well as after an update, so a preference
+restored from a backup, or a library dropped from the image, cannot leave the
+directory stale.
+
+`tests/icons_test.py` pins the resolution rules offline — who wins a shared name,
+that a demoted library's unique icons stay served, that a disabled one is hidden
+from the picker but still reachable, and that nothing in the two roots is ever
+copied into `resolved/`. `tests/icon-libraries.mjs` covers the other half in a real
+browser with the api stubbed: that each row's promote, update and toggle reaches
+the right endpoint naming the right library.
 
 **The picker's list was the real obstacle.** It ships baked into the page as
 `__icons_data`, separately from the files, and the two already disagreed: 3222
@@ -935,7 +1000,10 @@ names against 3232 files, so ten icons on disk (`claude-ai-dark`,
 surfaced them either. The list now comes from `GET /api/icons`, which enumerates
 the real directories, with the baked list kept as the fallback for when the
 service is unreachable — which both fixes that mismatch and is what lets an
-update appear without rebuilding the image.
+update appear without rebuilding the image. A reply that *arrives* is taken as it
+stands, empty list included: turning every library off is something the panel lets
+you do, so an empty result is an answer rather than a failure, and the fallback is
+for no reply at all.
 
 **690 icons upstream have no svg at all.** The repo carries `svg/` (3232),
 `png/` (3913) and `webp/` (3905), and 690 names — `adblock`, `9anime`, `alarmpi`,
@@ -953,9 +1021,13 @@ suggestion strips it, so picking `adblock.webp` still suggests "Adblock".
 There was also a stray `assetgrid.png` sitting in `svg/` all along, invisible
 because the old pattern only matched `.svg`. It is offered now too.
 
-**The first run after this fetches ~690 files.** Downloads run 4 at a time with a
-retrying backoff, which takes well under a minute; subsequent checks are the usual
-no-op. The concurrency and the retries are related: an early 8-worker run lost 192
+**The first run after this fetches ~690 files** for homarr — the raster fallbacks
+it had never been able to reach. Downloads run 4 at a time with a retrying backoff,
+which takes well under a minute; subsequent checks are the usual no-op. A first
+download of selfhst or mdi is the whole set, ~7,500 files, and takes a few minutes;
+the row reports the phase and the count as it goes. `MAX_DOWNLOADS` was raised from
+6,000 to 12,000 for them — sized when homarr's ~3,900 was the only set, it refused
+both outright. The concurrency and the retries are related: an early 8-worker run lost 192
 of 690 files to `Temporary failure in name resolution` — the threads outpaced the
 DNS resolver, not any HTTP limit — so transient errors, timeouts, 429s and 5xxs
 are now retried with a backoff. Because the diff is by content, a run that ends
@@ -975,7 +1047,7 @@ Two directories are involved:
 | | |
 | --- | --- |
 | `svg/` → `/srv/icons-baked` | read-only bind mount of the repo. Ships with the image, so a full icon set works with no network access ever. |
-| `firehome-icons` volume | writable overlay. Updates land here; nginx serves it *in front of* the baked set. |
+| `firehome-icons` volume | writable overlay. Updates land here, one subdirectory per library, plus the `resolved/` overrides; nginx serves it *in front of* the baked set. |
 
 So an update never mutates the image, and `docker compose down -v` reverts to the
 shipped set.
@@ -1009,9 +1081,20 @@ crashing — it just sees no baked files and would fetch everything.
 
 ```
 GET  /api/icons          -> {"icons": [...], "count": N, "status": {...}}
-POST /api/icons/update   start an update; 409 while one is already running
-GET  /api/icons/status   phase while running, plus the last result
+POST /api/icons/update   <- {"library": "selfhst"}  409 while one is running
+POST /api/icons/config   <- {"preference": [...], "enabled": {...}}
+GET  /api/icons/status   phase while running, the last result per library, and
+                         the library list with each one's count and enabled flag
 ```
+
+`update` takes one library at a time and one runs at a time — the whole Icons
+section goes busy and the row being worked on says so. A missing `"library"` means
+the preferred one, which is what the bodyless route did before libraries existed.
+An unknown key is a 400, not a directory: `preference`, `enabled` and the update
+key are all validated against `LIBRARY_KEYS` before anything touches the
+filesystem, because a key becomes a directory name under the overlay. Keys the
+caller omits from `preference` keep their relative position at the end, so a stale
+client cannot silently drop a library.
 
 **"already up to date"** means the last run finished with 0 new and 0 changed:
 every icon in upstream's `svg/` has a byte-identical local copy. Note what it does

@@ -84,16 +84,31 @@ have been using:
 See [DOCKER.md](DOCKER.md#the-two-add-buttons) for the details of how the empty
 state is drawn.
 
-## Updating the icon set
+## Icon libraries
 
-**Settings → Icons → Check for updates** pulls new and changed icons from
-[homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons),
-including the **690 icons that exist only as webp or png** upstream and so were
-previously unreachable — searching for `adblock` or `9anime` now finds them.
-Tracks `main`, runs only when you click, and lands in a volume that sits in front
-of the set baked into the image — so `docker compose down -v` reverts to the
-shipped icons. This is the only thing in the stack that reaches the internet, and
-only on that click. See [DOCKER.md](DOCKER.md#icon-updates).
+**Settings → Icons** lists three sets. Each row has an **Update**, which pulls
+that set's new and changed icons from GitHub, and a toggle:
+
+| | |
+| --- | --- |
+| **Homarr dashboard-icons** | 3,233 icons, shipped with the app. Apache-2.0. |
+| **selfhst** | 7,528 service logos, downloaded on request. CC-BY-4.0. |
+| **Material Design Icons** | 7,447 generic UI glyphs — not service logos. Useful alongside a logo set, not instead of one. |
+
+They can all be installed at once, and they overlap: of selfhst's 7,528 names only
+1,354 also exist in homarr's, so **picking one set would throw away thousands of
+icons**. Instead they layer, and **↑** decides who wins a name more than one
+provides. Turning a set off hides it from the picker without breaking apps already
+using its icons.
+
+Updates include the **690 icons that exist only as webp or png** upstream and so
+were previously unreachable — searching for `adblock` or `9anime` now finds them.
+Each set tracks its default branch, runs only when you click, and lands in a
+volume that sits in front of the set baked into the image — so
+`docker compose down -v` reverts to the shipped icons. This is the only thing in
+the stack that reaches the internet, and only on that click. A first download of
+selfhst or mdi is ~7,500 files and takes a few minutes; the row reports progress.
+See [DOCKER.md](DOCKER.md#icon-updates).
 
 ## Settings
 
@@ -111,7 +126,7 @@ options that shipped with the page, plus:
 | **Show hover controls when locked** | Off by default, so locking hides the add/edit/delete affordances. See [DOCKER.md](DOCKER.md#what-the-lock-actually-locks). |
 | *(the lock itself)* | The padlock in the header is remembered, so it survives a reload and applies on every browser. |
 | *(automatic)* | Saving an app or bookmark without picking an icon fetches the site's own, falling back to a coloured tile with its initial. See [DOCKER.md](DOCKER.md#falling-back-to-the-sites-own-icon). |
-| **Icons — Check for updates** | Pulls new icons from upstream. See [DOCKER.md](DOCKER.md#icon-updates). |
+| **Icons** | One row per icon library: update it, turn it off, or move it up so it wins a shared name. See [DOCKER.md](DOCKER.md#icon-updates). |
 
 These are stored server-side with the rest of your config, so they follow you to
 any browser.
@@ -230,6 +245,7 @@ neither read nor written. The others each isolate one behaviour:
 | `theme-select.mjs`, `theme-persist.mjs`, `font-sizes.mjs` | The theme dropdown, the colour pickers, each size control. |
 | `mobile.mjs`, `header-swipe.mjs` | The three mobile layouts, and swipe-to-reveal on a phone. |
 | `cards.mjs`, `url-title.mjs` | App card padding and alignment; URL → Title in the real dialog. |
+| `icon-libraries.mjs` | The Icons rows: update, promote and enable each reach the api with the right library. |
 
 Worth doing by hand either way: load the same URL on a second device and check
 your config follows you.
@@ -243,11 +259,11 @@ your config follows you.
 | `extract.py` | Unpacks the self-extracting bundle into plain HTML + `assets/`, so the browser never runs the loader. |
 | `storage-shim.js` | Redirects the page's `localStorage` config to the config service. |
 | `api/server.py` | The config store. Stdlib only. |
-| `api/icons.py` | Icon updates from the upstream repo, diffed by git blob sha. |
+| `api/icons.py` | Icon libraries and their updates, diffed by git blob sha. |
 | `nginx.conf`, `Dockerfile`, `docker-compose.yml` | Serving and orchestration. |
 | `favicon.svg` | The site icon, and the source of truth for it. Replace it and re-run `tools/make-favicon.mjs` to regenerate the raster fallbacks. |
 | `api/suggest.py` | Search-suggestion proxy. Fetches the engine server-side; off unless enabled. |
-| `svg/` | The homarr-labs icon set, served at `/icons/` so nothing loads from a CDN. |
+| `svg/` | The homarr-labs icon set, served at `/icons/` so nothing loads from a CDN. The other libraries are downloaded into a volume, not committed here. |
 | `verify.sh`, `tests/` | Post-deploy and build-time checks. |
 
 ## After re-exporting firehome.html
@@ -270,6 +286,9 @@ Flame++ is MIT licensed — see [LICENSE](LICENSE).
 
 - The page design follows [Flame](https://github.com/pawelmalak/flame) by Paweł
   Malak, MIT licensed.
-- Icons are the [homarr-labs dashboard-icons](https://github.com/homarr-labs/dashboard-icons)
-  set, Apache-2.0. The logos they depict remain the property of their owners and
-  are included for identification only.
+- The shipped icons are the [homarr-labs dashboard-icons](https://github.com/homarr-labs/dashboard-icons)
+  set, Apache-2.0. The sets you can add from the settings panel are
+  [selfhst/icons](https://github.com/selfhst/icons) (CC-BY-4.0) and
+  [Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache-2.0).
+  The logos they depict remain the property of their owners and are included for
+  identification only.

@@ -570,10 +570,23 @@ print("ok    header lock/settings buttons flattened, locked state preserved")
 # The picker takes its list from the service so an update shows up without a
 # rebuild, and so the baked list's 3222-vs-3232 mismatch stops mattering.
 for needed in ("refreshIcons = () => fetch('/api/icons')", "this.refreshIcons();",
-               "fetch('/api/icons/update', { method: 'POST' })",
-               "updateIcons: this.updateIcons,", "{{ iconSummary }}",
-               "{{ iconBtnLabel }}", ">Icons</div>"):
+               "fetch('/api/icons/update', {", "updateIcons: this.updateIcons,",
+               "{{ iconSummary }}", "{{ lib.btnLabel }}", ">Icons</div>"):
     assert needed in tpl, "icon-update patch missing: %s" % needed
+# Several libraries can be installed at once, so the panel lists them: one row
+# each, with the controls that decide who wins a name more than one provides.
+for needed in ('<sc-for list="{{ iconLibs }}" as="lib"',
+               "moveIconLib: this.moveIconLib,", "toggleIconLib: this.toggleIconLib,",
+               "fetch('/api/icons/config', {", "{{ lib.label }}", "{{ lib.knob }}"):
+    assert needed in tpl, "icon-library patch missing: %s" % needed
+# The row's key has to reach the handlers: without it every button would update,
+# promote or toggle whichever library the api happened to pick.
+assert tpl.count('data-key="{{ lib.key }}"') == 3, \
+    "an icon-library control is missing its data-key"
+assert "e.currentTarget.dataset.key" in tpl, "the handlers never read the row's key"
+# One update at a time — the api answers 409 for a second — so a run in progress
+# has to be visible on the row it is for.
+assert "s.iconBusyKey === l.key" in tpl, "a running update is not shown on its row"
 # Rasters carry their extension in the name, so iconUrl must not append .svg to
 # them, and the title suggestion must not turn adblock.webp into "Adblock.webp".
 assert "/\\.(svg|webp|png)$/i.test(name) ? '' : '.svg'" in tpl, \
@@ -638,7 +651,7 @@ assert "saveDisabled = !m || !m.title.trim() || !m.url.trim();" in tpl and \
     "saveModal's guard and saveDisabled have drifted apart"
 # The baked list must survive as the fallback for when the service is unreachable.
 assert 'id="__icons_data"' in tpl, "baked icon list is gone; nothing to fall back to"
-print("ok    icon list served from the api, update button wired")
+print("ok    icon list served from the api, libraries listed with their controls")
 
 # The picker tiles are targeted by data-icon, not by the runtime-generated .scpx
 # class, whose base36 suffix moves whenever render order changes.

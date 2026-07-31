@@ -535,10 +535,20 @@ def tpl(text: str) -> str:
 # refreshIcons() is called outside the existing try/catch in componentDidMount so
 # a failure there cannot skip it, and it swallows its own errors: a dashboard that
 # still renders with the baked list beats one that breaks because the service is
-# down.
+# down. A reply that arrives is taken as it stands, empty list included — turning
+# every library off is a thing the panel now lets you do, and it has to be
+# believed rather than mistaken for a failure. The fallback is for no reply at
+# all, which the rejection and the catch already cover.
 #
-# The button only ever runs on click — no polling — so the container makes no
+# The buttons only ever run on click — no polling — so the container makes no
 # outbound request during a normal page load. See api/icons.py.
+#
+# Several icon libraries can be installed at once and they overlap, so the panel
+# lists them rather than offering one "check for updates". Each row updates,
+# enables or promotes one library; the order decides who wins a name more than one
+# provides, which is why promoting is a control at all. The api rebuilds the
+# directory nginx serves before it answers, so the page only has to reload the
+# list afterwards — see IconStore.resolve.
 ICON_UPDATE_PATCHES = tuple(
     (name, tpl(old), tpl(new))
     for name, old, new in (
@@ -556,7 +566,9 @@ ICON_UPDATE_PATCHES = tuple(
             "      themePos: { x: 0, y: 0 },\n"
             "      iconCount: 0,\n"
             "      iconMsg: '',\n"
-            "      iconBusy: false\n    };",
+            "      iconBusy: false,\n"
+            "      iconLibs: [],\n"
+            "      iconBusyKey: ''\n    };",
         ),
         (
             "icon-update handlers",
@@ -564,19 +576,27 @@ ICON_UPDATE_PATCHES = tuple(
             """  refreshIcons = () => fetch('/api/icons')
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(d => {
-      if (Array.isArray(d.icons) && d.icons.length) {
+      if (Array.isArray(d.icons)) {
         this.setState({ icons: d.icons, iconCount: d.count });
       }
-      if (d.status && d.status.writable === false && !this.state.iconMsg) {
+      const st = d.status || {};
+      // Already in preference order, so the rows render as they arrive.
+      if (Array.isArray(st.libraries)) this.setState({ iconLibs: st.libraries });
+      if (st.writable === false && !this.state.iconMsg) {
         this.setState({ iconMsg: 'icon storage is not writable' });
       }
       return d;
     })
     .catch(() => null);
-  updateIcons = () => {
+  // One update at a time — the api answers 409 for a second one — so the whole
+  // section goes busy and the row being worked on says so.
+  updateIcons = (e) => {
     if (this.state.iconBusy) return;
-    this.setState({ iconBusy: true, iconMsg: 'checking...' });
-    const done = (msg) => this.setState({ iconBusy: false, iconMsg: msg });
+    const key = (e && e.currentTarget && e.currentTarget.dataset.key) || '';
+    const lib = (this.state.iconLibs || []).find(l => l.key === key);
+    this.setState({ iconBusy: true, iconBusyKey: key,
+      iconMsg: 'checking ' + (lib ? lib.label : 'for updates') + '...' });
+    const done = (msg) => this.setState({ iconBusy: false, iconBusyKey: '', iconMsg: msg });
     const poll = () => fetch('/api/icons/status')
       .then(r => r.json())
       .then(st => {
@@ -595,9 +615,43 @@ ICON_UPDATE_PATCHES = tuple(
         ));
       })
       .catch(e => done('failed: ' + e.message));
-    fetch('/api/icons/update', { method: 'POST' })
+    fetch('/api/icons/update', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ library: key })
+    })
       .then(r => r.ok ? poll() : r.json().then(d => done('failed: ' + (d.error || r.status))))
       .catch(e => done('failed: ' + e.message));
+  };
+  // The api validates the keys and rebuilds what nginx serves, so the reply is
+  // enough to trust; reloading the list is what makes the change visible in the
+  // picker, since disabling a library removes its names from it.
+  iconConfig = (body) => {
+    this.setState({ iconMsg: 'saving...' });
+    return fetch('/api/icons/config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+      .then(r => r.ok ? r.json()
+        : r.json().then(d => Promise.reject(new Error(d.error || 'HTTP ' + r.status))))
+      .then(() => this.refreshIcons())
+      .then(() => this.setState({ iconMsg: '' }))
+      .catch(e => this.setState({ iconMsg: 'failed: ' + e.message }));
+  };
+  // Promotes one library a single place. The whole order is sent, not the move,
+  // so the api never has to reconstruct what the page was looking at.
+  moveIconLib = (e) => {
+    const key = e.currentTarget.dataset.key;
+    const order = (this.state.iconLibs || []).map(l => l.key);
+    const at = order.indexOf(key);
+    if (at < 1) return;
+    order.splice(at - 1, 0, order.splice(at, 1)[0]);
+    this.iconConfig({ preference: order });
+  };
+  toggleIconLib = (e) => {
+    const key = e.currentTarget.dataset.key;
+    const lib = (this.state.iconLibs || []).find(l => l.key === key);
+    if (!lib) return;
+    this.iconConfig({ enabled: { [key]: !lib.enabled } });
   };
   resetDefaults = () => {""",
         ),
@@ -606,9 +660,33 @@ ICON_UPDATE_PATCHES = tuple(
             "      pickIcon: this.pickIcon,",
             "      pickIcon: this.pickIcon,\n"
             "      updateIcons: this.updateIcons,\n"
+            "      moveIconLib: this.moveIconLib,\n"
+            "      toggleIconLib: this.toggleIconLib,\n"
             "      iconSummary: (s.iconCount || (s.icons || []).length || 0)"
             " + ' icons installed' + (s.iconMsg ? ' - ' + s.iconMsg : ''),\n"
-            "      iconBtnLabel: s.iconBusy ? 'Checking...' : 'Check for updates',",
+            # Per-row styles rather than one shared set: each row's toggle and
+            # buttons reflect that library's own state.
+            "      iconLibs: (s.iconLibs || []).map((l, i) => ({\n"
+            "        key: l.key, label: l.label,\n"
+            "        detail: (l.count || 0).toLocaleString() + ' icons'"
+            " + (l.note ? ' - ' + l.note : ''),\n"
+            "        upStyle: 'flex:none;width:22px;text-align:center;font-size:13px;"
+            "user-select:none;color:' + (i === 0 ? '#4c545c' : '#9aa3ad')"
+            " + ';cursor:' + (i === 0 ? 'default' : 'pointer'),\n"
+            "        btnLabel: s.iconBusyKey === l.key ? '...' : 'Update',\n"
+            "        btnStyle: 'flex:none;background:none;"
+            "border:1px solid rgba(255,255,255,.18);border-radius:7px;"
+            "padding:5px 11px;font-size:12px;font-weight:600;color:#dfe3e8;"
+            "font-family:inherit;cursor:pointer;opacity:'"
+            " + (s.iconBusy && s.iconBusyKey !== l.key ? '.45' : '1'),\n"
+            "        track: 'position:relative;width:38px;height:20px;flex:none;"
+            "border-radius:20px;cursor:pointer;transition:background .16s ease;"
+            "background:' + (l.enabled ? 'var(--accent)' : 'rgba(255,255,255,.16)'),\n"
+            "        knob: 'position:absolute;top:2px;left:'"
+            " + (l.enabled ? '20px' : '2px')"
+            " + ';width:16px;height:16px;border-radius:50%;background:#fff;"
+            "transition:left .16s ease'\n"
+            "      })),",
         ),
         (
             "icon-update settings row",
@@ -618,16 +696,37 @@ ICON_UPDATE_PATCHES = tuple(
             '          <button sc-camel-on-click="{{ resetDefaults }}"',
             '        <div style="font-size:12px;font-weight:700;letter-spacing:1px;'
             'text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px">Icons</div>\n'
-            '        <div style="display:flex;align-items:center;'
-            'justify-content:space-between;gap:12px">\n'
-            '          <span style="font-size:12.5px;color:#9aa3ad">'
-            "{{ iconSummary }}</span>\n"
-            '          <button sc-camel-on-click="{{ updateIcons }}" style="flex:none;'
-            "background:none;border:1px solid rgba(255,255,255,.18);border-radius:7px;"
-            "padding:7px 14px;font-size:12.5px;font-weight:600;color:#dfe3e8;"
-            'cursor:pointer;font-family:inherit" '
-            'style-hover="background:rgba(255,255,255,.08)">{{ iconBtnLabel }}</button>\n'
-            "        </div>\n"
+            '        <div style="font-size:12.5px;color:#9aa3ad">'
+            "{{ iconSummary }}</div>\n"
+            '        <div style="font-size:11.5px;color:#6d757e;margin-top:7px">'
+            "The sets overlap. Where more than one has an icon of the same name"
+            " the one nearest the top wins, and ↑ moves a set up. Turning one"
+            " off hides it from the picker; apps already using its icons keep"
+            " them. A set showing no icons has not been downloaded yet — Update"
+            " fetches it, which takes a few minutes.</div>\n"
+            '        <sc-for list="{{ iconLibs }}" as="lib" hint-placeholder-count="3">\n'
+            '          <div style="display:flex;align-items:center;gap:10px;'
+            'margin-top:12px">\n'
+            '            <span data-key="{{ lib.key }}"'
+            ' sc-camel-on-click="{{ moveIconLib }}" style="{{ lib.upStyle }}"'
+            ' title="Prefer this set">↑</span>\n'
+            '            <span style="flex:1;min-width:0">\n'
+            '              <span style="display:block;font-size:13.5px;color:#dfe3e8;'
+            'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+            "{{ lib.label }}</span>\n"
+            '              <span style="display:block;font-size:11.5px;color:#6d757e;'
+            'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+            "{{ lib.detail }}</span>\n"
+            "            </span>\n"
+            '            <button data-key="{{ lib.key }}"'
+            ' sc-camel-on-click="{{ updateIcons }}" style="{{ lib.btnStyle }}"'
+            ' style-hover="background:rgba(255,255,255,.08)">'
+            "{{ lib.btnLabel }}</button>\n"
+            '            <span data-key="{{ lib.key }}"'
+            ' sc-camel-on-click="{{ toggleIconLib }}" style="{{ lib.track }}">'
+            '<span style="{{ lib.knob }}"></span></span>\n'
+            "          </div>\n"
+            "        </sc-for>\n"
             '        <div style="display:flex;align-items:center;'
             "justify-content:space-between;margin-top:22px;padding-top:18px;"
             'border-top:1px solid rgba(255,255,255,.08)">\n'

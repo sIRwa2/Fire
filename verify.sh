@@ -146,7 +146,9 @@ fi
 echo
 echo "== icon set =="
 icons=$(curl -s "$BASE/api/icons")
-count=$(printf '%s' "$icons" | sed -n 's/.*"count": *\([0-9]*\).*/\1/p')
+# The first "count" in the reply, not the last: the nested status now carries one
+# per icon library, and sed's greedy .* would take mdi's 0 as the installed total.
+count=$(printf '%s' "$icons" | grep -o '"count": *[0-9]*' | head -1 | grep -o '[0-9]*')
 if [ "${count:-0}" -gt 3000 ] 2>/dev/null; then
     ok "icon list served from the api ($count)"
 else
@@ -194,6 +196,44 @@ if printf '%s' "$icons" | grep -q '"running"'; then
 else
     bad "icon updater reports status"
 fi
+
+# Several icon libraries can be installed at once, and the panel renders whatever
+# the api lists — in preference order, since that is what decides who wins a name
+# more than one provides.
+status=$(curl -s "$BASE/api/icons/status")
+keys=$(printf '%s' "$status" | grep -o '"key": *"[a-z0-9-]*"' | sed 's/.*"\([a-z0-9-]*\)"$/\1/')
+nkeys=$(printf '%s\n' "$keys" | grep -c .)
+if [ "${nkeys:-0}" -ge 3 ] 2>/dev/null; then
+    ok "icon libraries listed ($(printf '%s' "$keys" | tr '\n' ' '))"
+else
+    bad "icon libraries listed" "found [$nkeys]: $keys"
+fi
+# The set baked into the image has to be attributed to the library that shipped
+# it: it lives flat in the icon root rather than in a subdirectory, and if that
+# attribution breaks, its count reads 0 and its next update re-downloads all of it.
+shipped=$(printf '%s' "$status" | tr '{' '\n' | grep '"key": *"homarr"' |
+    sed -n 's/.*"count": *\([0-9]*\).*/\1/p' | head -1)
+if [ "${shipped:-0}" -gt 3000 ] 2>/dev/null; then
+    ok "the shipped library reports its icons ($shipped)"
+else
+    bad "the shipped library reports its icons" "count=[$shipped]"
+fi
+# Re-posting the order that is already in force: proves the endpoint is reachable
+# and validating, and changes nothing.
+if [ -n "$keys" ]; then
+    body=$(printf '%s' "$keys" | sed 's/.*/"&"/' | tr '\n' ',' | sed 's/,$//')
+    # The key name is quoted too, so the array has to be isolated before the keys
+    # are picked out of it.
+    echoed=$(curl -s -X POST "$BASE/api/icons/config" \
+        -H 'Content-Type: application/json' -d "{\"preference\":[$body]}" |
+        tr -d '\n' | sed -n 's/.*"preference": *\[\([^]]*\)\].*/\1/p' |
+        grep -o '[a-z0-9-]\{2,\}' | tr '\n' ' ' | sed 's/ *$//')
+    check "the library order round-trips" "$(printf '%s' "$keys" | tr '\n' ' ')" "$echoed"
+fi
+# An unknown key must never become a directory under the overlay.
+check "an unknown library is refused" 400 "$(curl -s -o /dev/null -w '%{http_code}' \
+    -X POST "$BASE/api/icons/update" -H 'Content-Type: application/json' \
+    -d '{"library":"../evil"}')"
 # A named volume mounted where the image has no directory comes out root-owned,
 # which the unprivileged api cannot write to — every download then fails EACCES.
 # The site-icon fetcher shares the api's network path; a bad URL must be refused
