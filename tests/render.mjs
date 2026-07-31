@@ -121,6 +121,18 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
         wrapMargin: parseFloat(cs('.page-wrap', 'marginLeft')),
         boxSizing: cs('.page-wrap', 'boxSizing'),
         headerMargin: cs('.page-wrap > header', 'marginTop'),
+        headerTop: (() => {
+          const h = document.querySelector('.page-wrap > header');
+          return h && Math.round(h.getBoundingClientRect().top);
+        })(),
+        // Margins collapse between these two, so this is the only honest way to
+        // know what the gap actually came out as.
+        barToHeaderGap: (() => {
+          const f = document.querySelector('.hdr-search');
+          const h = document.querySelector('.page-wrap > header');
+          if (!f || !h) return null;
+          return Math.round(h.getBoundingClientRect().top - f.getBoundingClientRect().bottom);
+        })(),
         searchWidth: (() => {
           const i = document.querySelector('.hdr-search input');
           return i && i.getBoundingClientRect().width;
@@ -168,7 +180,14 @@ for (const [engine, launcher] of [['webkit', webkit], ['chromium', chromium]]) {
     check(`${label}: wrapper is 90% wide`, Math.abs(s.wrapWidth - 1504 * 0.9) < 2, s.wrapWidth);
     check(`${label}: margin is 5% of the viewport`, Math.abs(s.wrapMargin - 1504 * 0.05) < 2,
       s.wrapMargin);
-    check(`${label}: header dropped 50px`, s.headerMargin === '50px', s.headerMargin);
+    // The header's own margin is now only the gap under the search bar, with the
+    // wrapper's padding carrying the rest. 140px is where it has always sat:
+    // 92px padding + the 40px bar + its 8px margin, previously 50px + 50px + 40.
+    // Shrinking the gap without adjusting the padding would move this, and the
+    // apps and bookmarks with it.
+    check(`${label}: header still sits 140px from the top`, s.headerTop === 140, s.headerTop);
+    check(`${label}: the search bar is a few px above the header, not 50`,
+      s.barToHeaderGap > 0 && s.barToHeaderGap <= 12, s.barToHeaderGap);
     // type is read off the live element: a browser that does not know
     // type="search" reflects "text", which is exactly the case where the
     // native clear button is missing and the styling above is inert.

@@ -82,18 +82,36 @@ PAGE_WRAP_CSS = (
     "@media (max-width:768px){.page-wrap{width:100%!important}}"
 )
 
-# Drop the header 50px. It is the first child of .page-wrap, which has
-# padding-top:50px, so the padding stops this margin collapsing through the
-# parent and the header ends up 100px from the top.
+# The header sits 100px from the top of the page. That was originally one 50px
+# margin on the header plus .page-wrap's own 50px padding, back when the header
+# was the wrapper's first child.
 #
-# The header is in normal flow, so everything below it moves down by the same
-# 50px. Shifting the header alone would mean taking it out of flow, which would
-# leave a gap where it used to be.
-HEADER_CSS = ".page-wrap > header{margin-top:50px!important}"
+# The search bar is now the first child, so that margin became the gap between
+# the bar and the header — 50px of dead space directly under the bar. Two facts
+# decide how to close it:
+#
+#   * The bar's margin-bottom and the header's margin-top are adjacent siblings,
+#     so they COLLAPSE: the gap is the larger of the two, not the sum. Lowering
+#     one alone does nothing while the other is bigger, which is why both are
+#     set to HEADER_GAP.
+#   * The header is in normal flow, so shrinking its margin lifts everything
+#     below it. The wrapper's padding absorbs exactly what the margin gives up,
+#     so the header — and the apps and bookmarks under it — do not move at all.
+#
+# Hence WRAP_PAD = 50 + (50 - HEADER_GAP): change HEADER_GAP alone and the rest
+# of the page stays where it is. !important on the padding because .page-wrap
+# carries it in an inline style attribute.
+HEADER_GAP = 8
+WRAP_PAD = 100 - HEADER_GAP
+HEADER_CSS = (
+    ".page-wrap > header{margin-top:%dpx!important}" % HEADER_GAP
+    + ".page-wrap{padding-top:%dpx!important}" % WRAP_PAD
+)
 
 # ── Search the web from the top of the page ─────────────────────────────────
-# A plain <form> with a GET action, so submitting is the browser's own
-# navigation: no JS, and it still works with scripting off.
+# A <form> with no action: submitting is handled by runSearch, which assigns
+# location. See SEARCH_ENGINE_PATCHES for why the native GET had to go — in
+# short, the CSP's form-action cannot name an engine the user has not typed yet.
 #
 # type="search" rather than type="text" is the point of using the native
 # control — it brings the clear (×) button, the search keyboard on mobile, and
@@ -159,7 +177,11 @@ SEARCH_CSS = (
     # opacity, never display or height: the row keeps its box whether or not the
     # bar is showing, so revealing it cannot move the date or the greeting. That
     # is the whole reason this is not a collapse.
-    ".hdr-search{margin:0 0 14px;opacity:0;transition:opacity .18s ease}"
+    # margin-bottom matches HEADER_GAP deliberately: it collapses against the
+    # header's margin-top, so a larger value here would reopen the gap that
+    # HEADER_CSS just closed, whatever the header's own margin says.
+    ".hdr-search{margin:0 0 " + str(HEADER_GAP) + "px;opacity:0;"
+    "transition:opacity .18s ease}"
     # Revealed only by its own strip. Hovering the header block below (the date
     # and the greeting) used to reveal it too, via
     # .page-wrap:has(> header:hover) — but that is a second, disjoint trigger

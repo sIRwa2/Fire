@@ -158,10 +158,35 @@ print("ok    page-wrap dynamic margin wired up (%s + width:90%%)" % wrap)
 
 # The header offset relies on being a child of .page-wrap, and on the parent
 # keeping a top padding so the margin can't collapse through it.
-assert ".page-wrap > header{margin-top:50px!important}" in tpl, "header offset CSS missing"
+#
+# The margin and the wrapper's padding are two halves of one sum: the header sits
+# HEADER_GAP below the search bar, and the padding makes up the difference so the
+# header stays 100px from the top. Changing one without the other either moves
+# the whole page or reopens the gap, so the arithmetic is asserted, not the
+# literals.
+localize_py = open(os.path.join(root, "localize.py"), encoding="utf-8").read()
+gap = int(re.search(r"^HEADER_GAP = (\d+)", localize_py, re.M).group(1))
+# Read the padding out of the built CSS rather than recomputing the formula, so
+# this checks what shipped instead of restating localize.py's arithmetic.
+pad = int(re.search(r"\.page-wrap\{padding-top:(\d+)px!important\}", tpl).group(1))
+assert ".page-wrap > header{margin-top:%dpx!important}" % gap in tpl, \
+    "header offset CSS missing or not driven by HEADER_GAP"
+assert gap + pad == 100, (
+    "the header's margin (%dpx) plus the wrapper's padding (%dpx) is %d, not 100: "
+    "the header has left its 100px offset and the whole page has shifted"
+    % (gap, pad, gap + pad)
+)
+# The bar's margin-bottom collapses against the header's margin-top, so a larger
+# value there silently wins and reopens the gap.
+bar_margin = int(re.search(r"\.hdr-search\{margin:0 0 (\d+)px", tpl).group(1))
+assert bar_margin <= gap, (
+    "the search bar's margin-bottom (%dpx) exceeds HEADER_GAP (%dpx); margins "
+    "collapse to the larger, so the gap would be %dpx" % (bar_margin, gap, bar_margin)
+)
 assert tpl.index("<header") > tpl.index('class="page-wrap"'), "header left page-wrap"
 assert re.search(r"padding:\s*\d+px", wrap), "page-wrap lost its padding; header margin would collapse"
-print("ok    header offset wired up")
+print("ok    header sits %dpx under the search bar (gap %d + wrapper padding %d)"
+      % (gap, gap, pad))
 
 # The search form submits by itself, so the parts that make that work — the GET
 # action, name="q" and type="search" — are the whole feature. type="text" would
@@ -190,7 +215,7 @@ assert ".hdr-search input{" in tpl, "search bar CSS missing"
 
 # Hidden until hovered, but the box has to stay: display:none or a height
 # collapse here would move the date and greeting on every hover.
-assert ".hdr-search{margin:0 0 14px;opacity:0" in tpl, \
+assert re.search(r"\.hdr-search\{margin:0 0 \d+px;opacity:0", tpl), \
     "search bar is not hidden by opacity; the reveal would shift the header"
 assert "display:none" not in tpl.split(".hdr-search{")[1][:200], \
     "search bar hidden with display:none, which does not reserve its height"
@@ -199,7 +224,6 @@ assert ".hdr-search:hover{opacity:1}" in tpl, \
 
 # The engine picker: every preset offered, the query placeholder substituted
 # rather than appended, and the custom URL field gated on a custom engine.
-localize_py = open(os.path.join(root, "localize.py"), encoding="utf-8").read()
 engines = re.findall(r'^SEARCH_ENGINES = \((.*?)^\)', localize_py, re.S | re.M)[0]
 keys = re.findall(r'\("([a-z]+)",', engines)
 assert len(keys) >= 4, "expected at least four search engines, found %s" % keys
