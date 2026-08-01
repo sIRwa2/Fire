@@ -935,9 +935,9 @@ polling, so a normal page load still makes no outbound request.
 | `selfhst` | [selfhst/icons](https://github.com/selfhst/icons) | no — 7,528 icons, downloaded on request |
 | `mdi` | [Templarian/MaterialDesign](https://github.com/Templarian/MaterialDesign) | no — 7,447 generic UI glyphs |
 
-**They overlap, so picking one would throw thousands of icons away.** Only 1,354
-of selfhst's names also exist in homarr's: 1,940 icons are homarr-only and 5,730
-selfhst-only. So all of them can be installed at once and a **preference order**
+**They overlap, so picking one would throw thousands of icons away.** Only 1,565
+of selfhst's 7,528 names also exist in homarr's 4,009: 2,444 icons are homarr-only
+and 5,963 selfhst-only, 9,972 distinct names between them. So all of them can be installed at once and a **preference order**
 decides who wins a name more than one provides. `POST /api/icons/config` persists
 that order and the enabled flags, alongside the rest of the icon state.
 

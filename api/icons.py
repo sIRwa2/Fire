@@ -10,9 +10,9 @@ so the same value can be computed for the local copies and compared without
 downloading anything. Only genuinely new or changed files are fetched. Verified
 against all 3232 upstream icons: the computed shas matched GitHub's exactly.
 
-Several libraries can be installed at once, and they overlap: only 1354 of
-selfhst's 7084 names also exist in homarr's 3294, so 1940 icons are homarr-only
-and 5730 selfhst-only. Picking one set would throw away thousands of icons, so
+Several libraries can be installed at once, and they overlap: only 1565 of
+selfhst's 7528 names also exist in homarr's 4009, so 2444 icons are homarr-only
+and 5963 selfhst-only. Picking one set would throw away thousands of icons, so
 they layer instead, and a preference order decides who wins a shared name.
 
 Directories, in the order names() resolves them:
@@ -91,7 +91,7 @@ LIBRARIES = (
         "branch": "master",
         "baked": False,
         "home": "https://pictogrammers.com/library/mdi/",
-        # 7447 generic UI glyphs with almost no service logos: 130 names shared
+        # 7447 generic UI glyphs with almost no service logos: 136 names shared
         # with homarr, and no jellyfin, proxmox or gitea. It supplements a service
         # set rather than replacing one, so few installs will want it. Notes are
         # kept to one short line: the panel gives each one a single row.

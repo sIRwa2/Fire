@@ -7,6 +7,37 @@ follows [Flame](https://github.com/pawelmalak/flame).
 Everything is served from one container on your LAN. It reaches the internet only
 when you ask it to — see [Risks and trade-offs](#risks-and-trade-offs).
 
+## Icons: what to expect
+
+**You get 3,233 icons in the box.** They install with the app, work offline, and
+cover most self-hosted services. If that is fine, skip this section — there is
+nothing to do.
+
+Two more sets can be downloaded later, from the page itself:
+
+| set | what it is | icons |
+| --- | --- | --- |
+| **Homarr dashboard-icons** | already installed, ships with the app | 3,233 |
+| **selfhst** | more service logos, more up to date | 7,528 |
+| **Material Design Icons** | plain UI symbols, not logos | 7,447 |
+
+What you can do, in **Settings → Icons**:
+
+- **Nothing.** The shipped set is complete and needs no network.
+- **Add a set.** Click **Update** on its row. selfhst and MDI are ~7,500 files
+  each, so give them a few minutes; the row shows progress.
+- **Top up the shipped set.** **Update** on the homarr row adds ~780 more, the
+  ones that exist only as webp or png upstream, taking it to 4,009.
+- **Keep several.** Sets stack, they do not replace each other, so you end up with
+  every icon from all of them.
+- **Pick which one wins.** Two sets often have an icon of the same name. **↑**
+  moves a set up the list; the top one wins.
+- **Turn one off.** It vanishes from icon search. Apps already using its icons
+  keep working.
+
+Icons are only ever fetched on that click. Nothing is downloaded while you
+install, or on a normal page load.
+
 ## Install
 
 You need Docker with the Compose plugin, and nothing else.
@@ -86,29 +117,26 @@ state is drawn.
 
 ## Icon libraries
 
-**Settings → Icons** lists three sets. Each row has an **Update**, which pulls
-that set's new and changed icons from GitHub, and a toggle:
+The short version is above, under [Icons: what to expect](#icons-what-to-expect).
+The rest is why they stack rather than replace each other.
 
-| | |
-| --- | --- |
-| **Homarr dashboard-icons** | 3,233 icons, shipped with the app. Apache-2.0. |
-| **selfhst** | 7,528 service logos, downloaded on request. CC-BY-4.0. |
-| **Material Design Icons** | 7,447 generic UI glyphs — not service logos. Useful alongside a logo set, not instead of one. |
+**The sets overlap, but not much.** Of selfhst's 7,528 names only 1,565 also exist
+in homarr's 4,009 — 2,444 icons are homarr-only and 5,963 selfhst-only, 9,972
+distinct names between them. Choosing one would throw thousands of icons away, so
+all three can be installed at once and the order decides who wins a shared name.
+Licences: homarr Apache-2.0, selfhst CC-BY-4.0, MDI Apache-2.0.
 
-They can all be installed at once, and they overlap: of selfhst's 7,528 names only
-1,354 also exist in homarr's, so **picking one set would throw away thousands of
-icons**. Instead they layer, and **↑** decides who wins a name more than one
-provides. Turning a set off hides it from the picker without breaking apps already
-using its icons.
+**690 icons exist only as webp or png** upstream and used to be unreachable —
+searching for `adblock` or `9anime` finds them now.
 
-Updates include the **690 icons that exist only as webp or png** upstream and so
-were previously unreachable — searching for `adblock` or `9anime` now finds them.
-Each set tracks its default branch, runs only when you click, and lands in a
-volume that sits in front of the set baked into the image — so
-`docker compose down -v` reverts to the shipped icons. This is the only thing in
-the stack that reaches the internet, and only on that click. A first download of
-selfhst or mdi is ~7,500 files and takes a few minutes; the row reports progress.
-See [DOCKER.md](DOCKER.md#icon-updates).
+Downloads land in a volume that sits in front of the set baked into the image, so
+`docker compose down -v` reverts to the shipped icons and an update never touches
+the image. Each set tracks its own default branch and only runs when you click.
+Turning a set off hides it from icon search but keeps serving what it already
+provides, which is why apps using its icons do not break.
+
+See [DOCKER.md](DOCKER.md#icon-updates) for how nginx resolves a name it cannot
+reason about.
 
 ## Settings
 
