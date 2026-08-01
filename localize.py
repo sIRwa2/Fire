@@ -1105,6 +1105,55 @@ ENTER_SAVE_PATCHES = tuple(
 )
 
 
+# ── Closing the add/edit dialog by clicking away ────────────────────────────
+# The export closes the dialog from a click handler on the dimmed backdrop that
+# fires whenever e.target === e.currentTarget — the backdrop itself was clicked,
+# rather than something inside the dialog.
+#
+# The catch is what a click event's target is when press and release happen on
+# different elements: the browser dispatches it on the nearest common ancestor of
+# the two. Select the URL text, overshoot the dialog's edge, release over the
+# backdrop, and that ancestor *is* the backdrop — so a selection drag was
+# indistinguishable from a click outside, and the dialog vanished mid-edit.
+#
+# So the close does not ride on click at all. pointerdown records whether the
+# press landed on the backdrop and pointerup closes only if the release landed
+# there too, which also rules out the mirror gesture (press outside, release
+# inside). A tap or click wholly on the backdrop still closes it.
+#
+# pressedBackdrop is a plain instance field rather than state: nothing renders
+# from it, and a setState here would rebuild the dialog between press and
+# release.
+MODAL_BACKDROP_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "close the dialog on a press and release that both land outside",
+            "  backdropClick = (e) => { if (e.target === e.currentTarget)"
+            " this.setState({ modal: null }); };",
+            "  backdropDown = (e) => { this.pressedBackdrop ="
+            " e.target === e.currentTarget; };\n"
+            "  backdropUp = (e) => { if (e.target === e.currentTarget"
+            " && this.pressedBackdrop) this.setState({ modal: null }); };",
+        ),
+        (
+            "the backdrop listens for the two halves of the gesture",
+            '<div sc-camel-on-click="{{ backdropClick }}"'
+            ' style="position:fixed;inset:0;',
+            '<div sc-camel-on-pointer-down="{{ backdropDown }}"'
+            ' sc-camel-on-pointer-up="{{ backdropUp }}"'
+            ' style="position:fixed;inset:0;',
+        ),
+        (
+            "expose both halves instead of the click handler",
+            "      backdropClick: this.backdropClick,",
+            "      backdropDown: this.backdropDown,\n"
+            "      backdropUp: this.backdropUp,",
+        ),
+    )
+)
+
+
 # ── Bookmarks and apps as the same kind of thing ────────────────────────────
 # Items drag between the two lists, and the drop handler already treats them as
 # one shape: moving a bookmark into apps synthesises a desc from the URL host,
@@ -1681,6 +1730,135 @@ THEME_SELECT_PATCHES = tuple(
             "          </sc-for>\n"
             "        </select>",
         ),
+    )
+)
+
+
+# ── Typing a hex colour ─────────────────────────────────────────────────────
+# Accent and Background each offered five swatches and an <input type="color">
+# labelled "Custom". The native picker is the wrong tool for a colour you already
+# know: it opens an OS dialog and has no way to accept #1e2430 as text. The label
+# is replaced by the field it was describing.
+#
+# The field is controlled, but on a *draft* rather than on the theme: it holds
+# whatever has been typed, and the theme is only written once that text parses.
+# Validating against the theme value directly is the trap the font size rows hit
+# from the other side — a controlled input whose handler ignores anything not yet
+# a full hex re-renders the old value on every rejected keystroke, so "#1e2430"
+# can never be typed one character at a time. The draft is dropped on blur, which
+# is also what discards a half-typed or nonsense value and snaps the field back to
+# the colour actually in use.
+#
+# on-change, not on-input: React's onChange *is* the input event, so it fires per
+# keystroke and keeps the input on React's supported controlled path.
+#
+# Both #abc and #aabbcc are accepted, with or without the #, in either case.
+# Shorthand is expanded and the result lowercased because the value is handed
+# straight to <input type="color">, which silently resets to #000000 for anything
+# that is not exactly #rrggbb.
+#
+# The rows can now wrap: five swatches, the picker and a 92px field exceed the
+# panel's width on a phone, and wrapping beats the horizontal scroll the panel
+# would otherwise get.
+HEX_FIELD_STYLE = (
+    "width:92px;flex:none;background:rgba(255,255,255,.05);"
+    "border:1px solid rgba(255,255,255,.15);border-radius:7px;padding:6px 8px;"
+    "font-size:13px;color:#eceef1;font-family:inherit;color-scheme:dark"
+)
+
+HEX_ROW_STYLE = (
+    "display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:24px"
+)
+
+
+def _hex_row(key, label):
+    """The swatch row for one colour, with "Custom" traded for a hex field.
+
+    Anchored on the whole row so the two rows — identical but for their swatch
+    list and colour key — each match exactly once.
+    """
+    swatches = (
+        '          <sc-for list="{{ ' + key + 'Swatches }}" as="sw"'
+        ' hint-placeholder-count="5">\n'
+        '            <span data-k="{{ sw.k }}" data-color="{{ sw.color }}"'
+        ' sc-camel-on-click="{{ pickSwatch }}" style="{{ sw.style }}"></span>\n'
+        "          </sc-for>\n"
+    )
+    picker = (
+        '<input type="color" value="{{ ' + key + 'Val }}" data-k="' + key + '"'
+        ' sc-camel-on-input="{{ colorChange }}" style="width:30px;height:30px;'
+        "padding:0;border:none;background:none;border-radius:6px;cursor:pointer"
+    )
+    old = (
+        '        <div style="display:flex;align-items:center;gap:12px;'
+        'margin-bottom:24px">\n'
+        + swatches
+        + '          <label style="display:flex;align-items:center;gap:7px;'
+        'margin-left:4px;font-size:12.5px;color:#9aa3ad;cursor:pointer">\n'
+        "            " + picker + '">Custom\n'
+        "          </label>\n"
+        "        </div>"
+    )
+    new = (
+        '        <div style="' + HEX_ROW_STYLE + '">\n'
+        + swatches
+        + "          " + picker + ';margin-left:4px">\n'
+        '          <input type="text" value="{{ ' + key + 'Hex }}"'
+        ' data-k="' + key + '" sc-camel-on-change="{{ hexColor }}"'
+        ' sc-camel-on-blur="{{ hexBlur }}" sc-camel-max-length="7"'
+        ' sc-camel-spell-check="{{ false }}" sc-camel-auto-complete="off"'
+        ' sc-camel-auto-capitalize="off" placeholder="#rrggbb"'
+        ' aria-label="' + label + ' as a hex value"'
+        ' style="' + HEX_FIELD_STYLE + '">\n'
+        "        </div>"
+    )
+    return old, new
+
+
+HEX_COLOR_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "what each hex field shows",
+            "      accentVal: th.accent,\n"
+            "      bgVal: th.bg,",
+            "      accentVal: th.accent,\n"
+            "      bgVal: th.bg,\n"
+            "      accentHex: Component.hexShown(s, th, 'accent'),\n"
+            "      bgHex: Component.hexShown(s, th, 'bg'),",
+        ),
+        (
+            "parse and apply a typed hex",
+            "  colorChange = (e) => this.setTheme("
+            "{ [e.currentTarget.dataset.k]: e.currentTarget.value });",
+            """  colorChange = (e) => this.setTheme({ [e.currentTarget.dataset.k]: e.currentTarget.value });
+  static hexShown(s, th, k) {
+    const draft = s.hexDraft || {};
+    return draft[k] == null ? th[k] : draft[k];
+  }
+  static parseHex(raw) {
+    const s = String(raw).trim().replace(/^#/, '').toLowerCase();
+    if (/^[0-9a-f]{3}$/.test(s)) return '#' + s[0] + s[0] + s[1] + s[1] + s[2] + s[2];
+    return /^[0-9a-f]{6}$/.test(s) ? '#' + s : null;
+  }
+  setHexDraft = (k, v) => this.setState({ hexDraft: { ...this.state.hexDraft, [k]: v } });
+  hexColor = (e) => {
+    const k = e.currentTarget.dataset.k, raw = e.currentTarget.value;
+    this.setHexDraft(k, raw);
+    const parsed = Component.parseHex(raw);
+    if (parsed) this.setTheme({ [k]: parsed });
+  };
+  hexBlur = (e) => this.setHexDraft(e.currentTarget.dataset.k, null);""",
+        ),
+        (
+            "expose the hex handlers",
+            "      colorChange: this.colorChange,",
+            "      colorChange: this.colorChange,\n"
+            "      hexColor: this.hexColor,\n"
+            "      hexBlur: this.hexBlur,",
+        ),
+        ("the accent hex field",) + _hex_row("accent", "Accent color"),
+        ("the background hex field",) + _hex_row("bg", "Background color"),
     )
 )
 
@@ -2420,6 +2598,9 @@ def apply_js_patches(body: str) -> str:
                            + SUGGEST_PATCHES
                            # Last: its anchors are what JS_PATCHES and
                            # CLIPBOARD_PATCHES leave behind.
+                           # Anywhere: both anchor on export text nothing else
+                           # touches.
+                           + MODAL_BACKDROP_PATCHES + HEX_COLOR_PATCHES
                            + URL_TITLE_PATCHES + ENTER_SAVE_PATCHES
                            # After ENTER_SAVE_PATCHES: it extends the handler
                            # body that patch rewrites.

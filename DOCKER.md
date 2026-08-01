@@ -588,8 +588,15 @@ backdropUp = (e) => { if (e.target === e.currentTarget && this.pressedBackdrop) 
 ```
 
 A tap or click wholly on the backdrop still closes it; a drag that crosses the
-edge in either direction does not. `tests/modal-backdrop.mjs` drives all three
-gestures.
+edge in either direction does not. `pressedBackdrop` is a plain instance field
+rather than state — nothing renders from it, and a `setState` between press and
+release would rebuild the dialog mid-gesture.
+
+Like every other behavioural change, this is a `localize.py` patch against the
+exported markup, not an edit to `firehome.html`: a re-export brings the click
+handler back, and the patch's hit-count assertion is what turns that into a build
+failure rather than a bug that quietly returns.
+`tests/modal-backdrop.mjs` drives all three gestures.
 
 ## Bookmarks and apps are the same kind of thing
 
@@ -944,6 +951,40 @@ the panel.
 elements through the runtime, that choosing one applies and persists it, that the
 choice comes back selected after a reload, and that a hand-picked colour falls back
 to Custom.
+
+### Typing a hex colour
+
+Accent and Background each offered five swatches and an `<input type="color">`
+labelled **Custom**. The native picker is the wrong tool for a colour you already
+know — it opens an OS dialog and has no way to accept `#1e2430` as text. That
+label is now the field it was describing, and the picker stays for choosing by
+eye.
+
+The field is controlled, but on a **draft** rather than on the theme: it holds
+whatever has been typed, and the theme is only written once that text parses. This
+is the font size trap from the other side — a controlled input whose handler
+ignores anything that is not yet a full hex re-renders the old value on every
+rejected keystroke, so `#1e2430` could never be typed one character at a time. The
+draft is dropped on blur, which is also what discards a half-typed or nonsense
+value and snaps the field back to the colour actually in use.
+
+`onChange`, not `onInput`. React's `onChange` *is* the input event, so it fires per
+keystroke and keeps the field on React's supported controlled path — `value` with
+only an `onInput` handler earns a warning.
+
+`#abc` and `#aabbcc` are both accepted, with or without the `#`, in either case.
+Shorthand is expanded and the result lowercased, because the value is handed
+straight to `<input type="color">` — which silently resets to `#000000` for
+anything that is not exactly `#rrggbb`.
+
+The rows wrap now. Five swatches, the picker and a 92px field are wider than the
+panel on a phone, and wrapping beats the horizontal scroll the panel would
+otherwise get.
+
+`tests/hex-color.mjs` covers the parsing (pasted, typed a character at a time,
+shorthand, junk), that the colour reaches both the CSS variable and the native
+picker, that a swatch click is reflected back into the field, that a typed colour
+survives a reload — and that React logs no warning about the input.
 
 ## Icon updates
 
