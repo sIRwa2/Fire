@@ -142,7 +142,7 @@ print("ok    header-swipe.js embedded intact")
 
 # The exported template carries no title or icon links, so a missing injection
 # means a blank tab icon and a /favicon.ico probe on every load.
-for needed in ('<title>Flame++<', 'rel="icon" href="/favicon.svg"',
+for needed in ('<title>firehome<', 'rel="icon" href="/favicon.svg"',
                'rel="apple-touch-icon"'):
     assert needed in tpl, "head injection missing: %s" % needed
 print("ok    title and favicon links injected")

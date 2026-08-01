@@ -1,4 +1,4 @@
-# Flame++
+# firehome
 
 A self-hosted homepage for a home network: your apps and bookmarks, a web search
 bar, and config stored server-side so it follows you to any browser. The design
@@ -43,8 +43,8 @@ install, or on a normal page load.
 You need Docker with the Compose plugin, and nothing else.
 
 ```sh
-git clone <this-repo> flameplusplus
-cd flameplusplus
+git clone <this-repo> firehome
+cd firehome
 docker compose up -d --build
 ```
 
@@ -310,7 +310,7 @@ self-containment pieces actually work.
 
 ## Credits and licence
 
-Flame++ is MIT licensed — see [LICENSE](LICENSE).
+firehome is MIT licensed — see [LICENSE](LICENSE).
 
 - The page design follows [Flame](https://github.com/pawelmalak/flame) by Paweł
   Malak, MIT licensed.

@@ -97,7 +97,7 @@ if printf '%s' "$page" | grep -qF '/favicon.svg' &&
 else
     bad "favicon links are in the page"
 fi
-if printf '%s' "$page" | grep -qF '<title>Flame++<'; then
+if printf '%s' "$page" | grep -qF '<title>firehome<'; then
     ok "page title is set"
 else
     bad "page title is set"

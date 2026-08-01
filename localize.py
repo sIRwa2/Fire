@@ -49,7 +49,7 @@ PRECONNECT_RE = re.compile(r'<link rel=\\"preconnect\\"[^>]*?>(?:\\n)?')
 
 
 HEAD_MARKUP = (
-    "<title>Flame++</title>"
+    "<title>firehome</title>"
     '<link rel="icon" href="/favicon.svg" type="image/svg+xml">'
     '<link rel="alternate icon" href="/favicon.png" type="image/png" sizes="32x32">'
     '<link rel="apple-touch-icon" href="/apple-touch-icon.png">'
