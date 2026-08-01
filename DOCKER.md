@@ -566,6 +566,31 @@ the clipboard is only read when it has already been granted; the prompt is never
 triggered. Anything that is not an `http(s)://` URL under 2048 characters is
 ignored, and an existing URL is never overwritten.
 
+### Closing it by clicking away
+
+The dialog closes when you click the dimmed backdrop around it. That was a
+`click` handler on the backdrop that closed whenever `e.target ===
+e.currentTarget` — the element itself was clicked, not something inside it.
+
+The catch is what a `click` event's target is when press and release happen on
+different elements: the browser dispatches it on the nearest common ancestor of
+the two. Select the URL text, overshoot the dialog's edge, release over the
+backdrop, and that ancestor *is* the backdrop — so a selection drag looked
+exactly like a click outside, and the dialog vanished mid-edit.
+
+So the close does not ride on `click` at all. `pointerdown` records whether the
+press landed on the backdrop, and `pointerup` closes only if the release landed
+there too:
+
+```js
+backdropDown = (e) => { this.pressedBackdrop = e.target === e.currentTarget; };
+backdropUp = (e) => { if (e.target === e.currentTarget && this.pressedBackdrop) this.setState({ modal: null }); };
+```
+
+A tap or click wholly on the backdrop still closes it; a drag that crosses the
+edge in either direction does not. `tests/modal-backdrop.mjs` drives all three
+gestures.
+
 ## Bookmarks and apps are the same kind of thing
 
 Items drag between the two lists, and the drop handler already treated them as

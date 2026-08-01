@@ -274,6 +274,7 @@ neither read nor written. The others each isolate one behaviour:
 | `mobile.mjs`, `header-swipe.mjs` | The three mobile layouts, and swipe-to-reveal on a phone. |
 | `cards.mjs`, `url-title.mjs` | App card padding and alignment; URL → Title in the real dialog. |
 | `icon-libraries.mjs` | The Icons rows: update, promote and enable each reach the api with the right library. |
+| `modal-backdrop.mjs` | The add-entry dialog closes on a backdrop click, but not on a drag that crosses its edge. |
 
 Worth doing by hand either way: load the same URL on a second device and check
 your config follows you.
