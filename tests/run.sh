@@ -486,7 +486,22 @@ selects = re.findall(r"<select ([^>]*)>", tpl)
 keys = [re.search(r'data-k="([^"]+)"', s) for s in selects]
 assert all(keys), "a select carries no data-k, so tests cannot address it unambiguously"
 assert len({k.group(1) for k in keys}) == len(keys), "two selects share a data-k"
-print("ok    themes are a dropdown (%d selects, each addressable)" % len(selects))
+
+# An open dropdown is drawn by the browser, from the select's own background and
+# each option's. The panel's other fields are rgba(255,255,255,.05), and a select
+# copying that looks right closed and is unreadable open: the 5% composites over
+# the UA's white popup surface, under text inherited at #eceef1. Both surfaces
+# have to be opaque, and color-scheme:dark has to stay for Safari, where an
+# <option> cannot be styled at all.
+for attrs in selects:
+    bg = re.search(r"background:([^;\"]+)", attrs)
+    assert bg, "a settings dropdown declares no background"
+    assert "rgba" not in bg.group(1), \
+        "a settings dropdown is translucent (%s); its open list would be white" % bg.group(1)
+    assert "color-scheme:dark" in attrs, "a settings dropdown lost color-scheme:dark"
+assert "select[data-k] option{background-color:" in tpl, \
+    "the option rows have no background of their own, so an open dropdown is unreadable"
+print("ok    themes are a dropdown (%d selects, each addressable and opaque)" % len(selects))
 
 # Five font sizes, covering everything but the date and greeting. They travel as
 # custom properties because the values are per-user and this stylesheet is static.

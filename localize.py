@@ -479,6 +479,37 @@ ICON_TILE_CSS = (
     '[data-icon-field="1"]{border-color:var(--accent)!important}'
 )
 
+
+# ── The settings panel's dropdowns ──────────────────────────────────────────
+# Shared by all three (theme, mobile layout, search engine) because the reason
+# the background is opaque is easy to undo by accident.
+#
+# An open dropdown is drawn by the browser, not by the page, and it takes its
+# surface from this declaration. Every other field in the panel is
+# rgba(255,255,255,.05), and a select styled that way looks right closed and is
+# unreadable open: the translucent 5% composites over the UA's own popup surface,
+# which is white, and the option text inherits the panel's near-white #eceef1. So
+# all three dropdowns were white boxes with white text in them.
+#
+# #333840 is that exact 5% white resolved against the panel's #282d36 — a literal
+# in the bundle, used for the panel, the modal and the context menu, not something
+# the theme drives — so the closed control is unchanged to the pixel.
+#
+# color-scheme:dark stays as well. It is what Safari honours, where an <option>
+# cannot be styled at all, and it is what darkens the dropdown arrow.
+SELECT_STYLE = (
+    "width:100%;background:#333840;border:1px solid rgba(255,255,255,.15);"
+    "border-radius:7px;padding:10px 12px;font-size:14px;color:#eceef1;"
+    "font-family:inherit;color-scheme:dark;cursor:pointer"
+)
+
+# The rows inside an open dropdown. Chrome and Firefox paint each <option> with
+# its own background rather than the select's, so the surface above is not enough
+# on its own — without this the rows stay transparent over whatever the UA drew.
+# data-k is on every select in the panel and nowhere else, which keeps this off
+# any <select> a future patch adds elsewhere.
+SELECT_CSS = "select[data-k] option{background-color:#333840;color:#eceef1}"
+
 # Every control for editing the dashboard is hover-revealed, by one of two
 # mechanisms: four :hover rules in the page's own stylesheet (.add-app,
 # .hdr-actions, .new-cat, .cat-del) and two elements that carry an inline
@@ -1641,10 +1672,8 @@ THEME_SELECT_PATCHES = tuple(
             "          </sc-for>\n"
             "        </div>",
             '        <select value="{{ themeIndex }}" data-k="theme"'
-            ' sc-camel-on-change="{{ chooseTheme }}" style="width:100%;'
-            "background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);"
-            "border-radius:7px;padding:10px 12px;font-size:14px;color:#eceef1;"
-            'font-family:inherit;color-scheme:dark;cursor:pointer">\n'
+            ' sc-camel-on-change="{{ chooseTheme }}" style="'
+            + SELECT_STYLE + '">\n'
             '          <option value="">Custom</option>\n'
             '          <sc-for list="{{ themeList }}" as="t"'
             ' hint-placeholder-count="8">\n'
@@ -1930,10 +1959,8 @@ MOBILE_PATCHES = tuple(
             "text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px\">"
             "Mobile layout</div>\n"
             '        <select value="{{ mobileLayout }}" data-k="mobileLayout"'
-            ' sc-camel-on-change="{{ chooseMobile }}" style="width:100%;'
-            "background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);"
-            "border-radius:7px;padding:10px 12px;font-size:14px;color:#eceef1;"
-            'font-family:inherit;color-scheme:dark;cursor:pointer">\n'
+            ' sc-camel-on-change="{{ chooseMobile }}" style="'
+            + SELECT_STYLE + '">\n'
             + _mobile_options()
             + "\n        </select>\n"
             '        <div style="font-size:11.5px;color:#6d757e;margin-top:7px">'
@@ -2139,10 +2166,8 @@ SEARCH_ENGINE_PATCHES = tuple(
             "text-transform:uppercase;color:#9aa3ad;margin:22px 0 11px\">"
             "Search engine</div>\n"
             '        <select value="{{ searchEngine }}" data-k="searchEngine"'
-            ' sc-camel-on-change="{{ chooseEngine }}" style="width:100%;'
-            "background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);"
-            "border-radius:7px;padding:10px 12px;font-size:14px;color:#eceef1;"
-            'font-family:inherit;color-scheme:dark;cursor:pointer">\n'
+            ' sc-camel-on-change="{{ chooseEngine }}" style="'
+            + SELECT_STYLE + '">\n'
             + _engine_options()
             + "\n        </select>\n"
             '        <sc-if value="{{ customEngine }}"'
@@ -2439,7 +2464,7 @@ def patch_template(html: str) -> str:
         + ADD_BUTTON_CSS + ADD_LABEL_CSS
         + CARD_MARGIN_CSS
         + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS
-        + ICON_TILE_CSS + CATEGORY_GRIP_CSS + FONT_SIZE_CSS + TOUCH_CSS
+        + ICON_TILE_CSS + SELECT_CSS + CATEGORY_GRIP_CSS + FONT_SIZE_CSS + TOUCH_CSS
         + MOBILE_CSS + HEADER_SWIPE_CSS + LOCKED_CSS + "</style>"
         + "<script>\n" + shim + "\n</script>"
         + "<script>\n" + swipe + "\n</script>"
