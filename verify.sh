@@ -2,7 +2,7 @@
 # Post-deploy checks for the running stack. Run on the docker box after a pull:
 #
 #     ./verify.sh                       # against http://localhost:8080
-#     BASE=http://192.168.0.108:8080 ./verify.sh
+#     BASE=http://<host-ip>:8080 ./verify.sh
 #
 # Everything here is non-destructive: the config round-trip writes under a
 # scratch key and removes it again, leaving your dashboard config untouched.

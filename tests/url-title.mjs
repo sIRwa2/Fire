@@ -339,14 +339,14 @@ await cp.addInitScript(() => {
 await cp.addInitScript(d => { window.__stub = d; }, JSON.stringify({ rev: 1, data: doc2 }));
 await cp.goto(base, { waitUntil: 'networkidle' });
 await cp.waitForTimeout(1300);
-await cp.evaluate(() => navigator.clipboard.writeText('http://192.168.0.108:3002/gitea'));
+await cp.evaluate(() => navigator.clipboard.writeText('http://192.168.1.50:3002/gitea'));
 await cp.click('.add-app');
 await cp.waitForTimeout(700);
 const pre = await cp.evaluate((d) => Object.fromEntries(
   [...document.querySelectorAll(d + ' input')].filter(i => i.dataset.field)
     .map(i => [i.dataset.field, i.value])), DIALOG);
 console.log('clipboard prefill:', JSON.stringify(pre));
-check('the clipboard URL is prefilled', pre.url === 'http://192.168.0.108:3002/gitea', JSON.stringify(pre));
+check('the clipboard URL is prefilled', pre.url === 'http://192.168.1.50:3002/gitea', JSON.stringify(pre));
 check('and its Title is guessed from it', pre.title === 'Gitea', JSON.stringify(pre));
 await cr.close();
 

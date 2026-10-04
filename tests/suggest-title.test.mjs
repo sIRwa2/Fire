@@ -120,8 +120,8 @@ for (const [url, want] of [
   ['http://home-assistant.lan:8123', 'Home Assistant'],  // port ignored
   ['http://nas.lan:5000/webman/index.cgi', 'Nas'],       // path ignored when the host names it
   ['https://synthtopia.com/', 'Synthtopia'],
-  ['http://192.168.0.108:3002/gitea', 'Gitea'],          // IP -> first path segment
-  ['http://192.168.0.108:3002/gitea/firehome.git', 'Gitea'],
+  ['http://192.168.1.50:3002/gitea', 'Gitea'],          // IP -> first path segment
+  ['http://192.168.1.50:3002/gitea/firehome.git', 'Gitea'],
   ['http://[::1]:8096/jellyfin', 'Jellyfin'],            // IPv6 too
 ]) {
   const s = session();
@@ -130,7 +130,7 @@ for (const [url, want] of [
 }
 
 // Nothing to go on: no host name and no path. Better an empty field than junk.
-for (const url of ['http://192.168.0.108:8080', 'http://192.168.0.108/', 'http://10.0.0.5/2024']) {
+for (const url of ['http://192.168.1.50:8080', 'http://192.168.1.50/', 'http://10.0.0.5/2024']) {
   const s = session();
   s.type('url', url);
   check(`${url} suggests nothing`, s.modal.title === '', s.modal.title);

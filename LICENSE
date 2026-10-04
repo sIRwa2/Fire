@@ -25,8 +25,14 @@ SOFTWARE.
 This repository redistributes third-party material under its own terms:
 
   svg/  The dashboard icon set from github.com/homarr-labs/dashboard-icons,
-        licensed Apache-2.0. Individual icons depict third-party logos and
-        trademarks that remain the property of their respective owners; they
-        are included for identification only.
+        licensed Apache-2.0; a copy of that licence is at svg/LICENSE.
+        Individual icons depict third-party logos and trademarks that remain
+        the property of their respective owners; they are included for
+        identification only.
+
+  firehome.html embeds React and ReactDOM (MIT, Meta Platforms, Inc.) and the
+        Inter typeface by Rasmus Andersson, licensed under the SIL Open Font
+        License 1.1 (https://openfontlicense.org). The fonts are embedded
+        unmodified and remain under that licence.
 
 The page design follows Flame (github.com/pawelmalak/flame), MIT licensed.

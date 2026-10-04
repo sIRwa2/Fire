@@ -839,8 +839,8 @@ CLIPBOARD_PATCHES = tuple(
 #   https://www.motogp.com/en/videopass  -> Motogp     (leading www. dropped)
 #   https://jellyfin.example.com         -> Jellyfin
 #   http://home-assistant.lan:8123       -> Home Assistant
-#   http://192.168.0.108:3002/gitea      -> Gitea      (IP: first path segment)
-#   http://192.168.0.108:8080            -> ''         (nothing to go on)
+#   http://192.168.1.50:3002/gitea      -> Gitea      (IP: first path segment)
+#   http://192.168.1.50:8080            -> ''         (nothing to go on)
 #
 # An IP address says nothing about what is running behind it, so the first path
 # segment stands in — which is exactly the shape a reverse-proxied LAN service

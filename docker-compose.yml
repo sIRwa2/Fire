@@ -1,6 +1,4 @@
 services:
-  # Kept as "firehome" rather than renamed to "web": the container_name is
-  # already taken by the running deployment, and a rename would collide.
   firehome:
     build: .
     image: firehome:local

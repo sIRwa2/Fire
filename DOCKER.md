@@ -172,7 +172,7 @@ Useful from the console: `fireHomeStorage.dump()` shows what would be saved,
 
 ```sh
 ./verify.sh                             # against http://localhost:8080
-BASE=http://192.168.0.108:8080 ./verify.sh
+BASE=http://<host-ip>:8080 ./verify.sh
 ```
 
 Checks container and health state, `nginx -t`, that the shim and icon set made
@@ -191,7 +191,7 @@ needs a few hundred MB of browsers:
 ```sh
 npm install playwright
 npx playwright install --with-deps webkit chromium
-node tests/render.mjs http://192.168.0.108:8080
+node tests/render.mjs http://<host-ip>:8080
 ```
 
 It is non-destructive: the config is stubbed per-page rather than written, so the
@@ -384,8 +384,8 @@ The host's first label is the useful part, with a leading `www.` dropped:
 | `https://www.motogp.com/en/videopass` | Motogp |
 | `https://jellyfin.example.com` | Jellyfin |
 | `http://home-assistant.lan:8123` | Home Assistant |
-| `http://192.168.0.108:3002/gitea` | Gitea |
-| `http://192.168.0.108:8080` | *(nothing)* |
+| `http://192.168.1.50:3002/gitea` | Gitea |
+| `http://192.168.1.50:8080` | *(nothing)* |
 
 An IP address says nothing about what is running behind it, so the first path
 segment stands in — which is the shape a reverse-proxied LAN service takes, and
@@ -554,7 +554,7 @@ measured in both engines:
 | origin | `isSecureContext` | `navigator.clipboard` |
 | --- | --- | --- |
 | `http://127.0.0.1:8080` | true | present; `readText()` throws `NotAllowedError` |
-| `http://192.168.0.108:8080` | **false** | **undefined** |
+| `http://192.168.1.50:8080` | **false** | **undefined** |
 
 So over `http://` it is inert, and it starts working by itself if the dashboard
 ever sits behind HTTPS.

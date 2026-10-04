@@ -94,7 +94,7 @@ config store readable and writable:
 
 ```sh
 ./verify.sh
-BASE=http://192.168.0.108:8080 ./verify.sh    # from another machine
+BASE=http://<host-ip>:8080 ./verify.sh    # from another machine
 ```
 
 It is non-destructive: its config write uses a scratch key and removes it
@@ -259,7 +259,7 @@ The rest drive a real browser and need playwright:
 
 ```sh
 npm install playwright && npx playwright install --with-deps webkit chromium
-node tests/render.mjs http://192.168.0.108:8080
+node tests/render.mjs http://<host-ip>:8080
 ```
 
 `render.mjs` is the broad one — it confirms the page renders in WebKit and
