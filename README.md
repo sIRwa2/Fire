@@ -103,8 +103,10 @@ afterwards. For the full test suite, see [Testing](#testing).
 ## Starting over
 
 A fresh install is already empty — the upstream bundle's 12 `*.example.com` demo
-apps and 4 bookmark groups are stripped at build time. To wipe a dashboard you
-have been using:
+apps and 4 bookmark groups are stripped at build time. They are one click away if
+you want something to look at: **Settings → Add examples** puts them on the
+dashboard, next to whatever is already there. To wipe a dashboard you have been
+using:
 
 | | |
 | --- | --- |
@@ -152,6 +154,7 @@ options that shipped with the page, plus:
 | **Keyboard shortcuts** | Listed in the panel: `L` lock, `A` add application, `S` settings, `Space` focus the search bar. Ignored while typing. |
 | **Font sizes** | Five controls: section headings, application name and description, bookmark category and name. Everything except the date and greeting. |
 | **Show hover controls when locked** | Off by default, so locking hides the add/edit/delete affordances. See [DOCKER.md](DOCKER.md#what-the-lock-actually-locks). |
+| **Add examples** | Adds the 12 demo apps and 4 bookmark groups, keeping what you already have. Asks first unless the dashboard is empty, and only adds what is missing, so pressing it twice changes nothing. |
 | *(the lock itself)* | The padlock in the header is remembered, so it survives a reload and applies on every browser. |
 | *(automatic)* | Saving an app or bookmark without picking an icon fetches the site's own, falling back to a coloured tile with its initial. See [DOCKER.md](DOCKER.md#falling-back-to-the-sites-own-icon). |
 | **Icons** | One row per icon library: update it, turn it off, or move it up so it wins a shared name. See [DOCKER.md](DOCKER.md#icon-updates). |
@@ -276,6 +279,7 @@ neither read nor written. The others each isolate one behaviour:
 | `icon-libraries.mjs` | The Icons rows: update, promote and enable each reach the api with the right library. |
 | `modal-backdrop.mjs` | The add-entry dialog closes on a backdrop click, but not on a drag that crosses its edge. |
 | `hex-color.mjs` | The accent/background hex fields: what they accept, apply and persist. |
+| `examples.mjs` | Add examples: fills an empty dashboard without asking, asks before adding to a populated one, never duplicates, and leaves Reset working. |
 
 Worth doing by hand either way: load the same URL on a second device and check
 your config follows you.
@@ -285,7 +289,7 @@ your config follows you.
 | Path | |
 | --- | --- |
 | `firehome.html` | The exported page bundle. Source of truth; re-export overwrites it. |
-| `localize.py` | Build-time patches: removes the CDN/font dependencies, injects the storage shim, favicon links, title and layout CSS, empties the demo content. Fails loudly if a re-export moves what it patches. |
+| `localize.py` | Build-time patches: removes the CDN/font dependencies, injects the storage shim, favicon links, title and layout CSS, empties the demo content (kept behind **Add examples**). Fails loudly if a re-export moves what it patches. |
 | `extract.py` | Unpacks the self-extracting bundle into plain HTML + `assets/`, so the browser never runs the loader. |
 | `storage-shim.js` | Redirects the page's `localStorage` config to the config service. |
 | `api/server.py` | The config store. Stdlib only. |

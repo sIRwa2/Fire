@@ -328,13 +328,21 @@ print("ok    search bar above the header, hover-revealed without shifting it")
 for name in ("defaultApps", "defaultGroups"):
     body = re.search(r"static " + name + r"\(\) \{(.*?)\n  \}", tpl, re.S).group(1)
     assert body.strip() == "return [];", "%s still returns data: %s" % (name, body.strip()[:60])
+# The demo data survives only under the example names, where "Add examples"
+# finds it; the markup, where the URL hint used to carry it, is clean.
+for name in ("exampleApps", "exampleGroups"):
+    body = re.search(r"static " + name + r"\(\) \{(.*?)\n  \}", tpl, re.S).group(1)
+    assert body.strip() != "return [];", "%s was emptied too; Add examples has nothing to add" % name
+markup = tpl[tpl.index("<body"):tpl.index("class Component extends DCLogic")]
 for gone in ("bitwarden.example.com", "news.ycombinator.com",
-             "store.steampowered.com", "Todoist"):
-    assert gone not in tpl, "placeholder data still present: %s" % gone
-assert tpl.count("example.com") == 0, "example.com is still referenced somewhere"
+             "store.steampowered.com", "Todoist", "example.com"):
+    assert gone not in markup, "placeholder data still present in the markup: %s" % gone
+for s in ("addExamples = () => {", "Component.exampleApps()", "Component.exampleGroups()",
+          'sc-camel-on-click="{{ addExamples }}"'):
+    assert s in tpl, "Add examples is not wired up: %s missing" % s
 # The dialog has no labels, so the URL field must keep some placeholder.
 assert 'placeholder="URL"' in tpl, "the URL field lost its placeholder entirely"
-print("ok    placeholder apps, bookmarks and URL hint emptied")
+print("ok    placeholder apps, bookmarks and URL hint emptied; demo data kept as examples")
 
 # The flat add buttons must be unconditional: scoping them to :only-child meant
 # the outline and tinted square came back the moment an app was added.

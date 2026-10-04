@@ -219,6 +219,9 @@ SEARCH_CSS = (
 # slate actually clean — wiping the stored config only falls back to these, and
 # componentDidMount() calls saveLS() on mount, so the very next page load
 # persists them again and undoes the reset.
+#
+# The demo data itself is kept, renamed exampleApps()/exampleGroups(), so the
+# "Add examples" button in Settings (EXAMPLE_PATCHES) can put it back on request.
 EMPTIED_DEFAULTS = ("defaultApps", "defaultGroups")
 
 # The URL field's format hint. The dialog has no labels — every field relies on
@@ -2576,6 +2579,77 @@ SUGGEST_PATCHES = tuple(
 )
 
 
+# ── Example content on demand ───────────────────────────────────────────────
+# A fresh dashboard is empty (empty_defaults), which is right for a clean install
+# but leaves nothing to look at when trying the page out. This puts the demo
+# dashboard the bundle shipped with behind a button next to Reset, so it is a
+# choice rather than the starting state.
+#
+# It adds rather than replaces: apps whose URL is already on the dashboard and
+# groups whose name already exists are skipped, so pressing it twice is harmless
+# and it can top up a dashboard that has lost a few of them. Everything added
+# gets a fresh id — the demo data reuses icon names as ids, and 'nextcloud' is
+# both an app and a bookmark, which only works because dedupeIds() runs in the
+# constructor; items added at runtime have to arrive unique.
+EXAMPLE_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "add-examples handler",
+            "  resetDefaults = () => {",
+            """  addExamples = () => {
+    const s = this.state;
+    const urls = new Set(s.apps.map(a => a.url));
+    const names = new Set(s.groups.map(g => (g.name || '').trim().toLowerCase()));
+    const apps = Component.exampleApps().filter(a => !urls.has(a.url))
+      .map(a => ({ ...a, id: this.uid() }));
+    const groups = Component.exampleGroups().filter(g => !names.has(g.name.toLowerCase()))
+      .map(g => ({ ...g, id: this.uid(), bookmarks: g.bookmarks.map(b => ({ ...b, id: this.uid() })) }));
+    if (!apps.length && !groups.length) {
+      window.alert('The example apps and bookmarks are all on the dashboard already.');
+      return;
+    }
+    if ((s.apps.length || s.groups.length)
+        && !window.confirm('Add ' + apps.length + ' example apps and ' + groups.length
+          + ' bookmark groups alongside what is already here?')) return;
+    this.persist({ apps: s.apps.concat(apps), groups: s.groups.concat(groups), themeOpen: false });
+  };
+  resetDefaults = () => {""",
+        ),
+        (
+            "add-examples prop",
+            "      resetDefaults: this.resetDefaults,\n",
+            "      resetDefaults: this.resetDefaults,\n"
+            "      addExamples: this.addExamples,\n",
+        ),
+        (
+            "add-examples button",
+            '          <button sc-camel-on-click="{{ resetDefaults }}" style="background:none;'
+            "border:1px solid rgba(224,138,138,.4);border-radius:7px;padding:9px 16px;"
+            "font-size:13px;font-weight:600;letter-spacing:.4px;color:#e08a8a;cursor:pointer;"
+            'font-family:inherit" style-hover="background:rgba(224,138,138,.12)">'
+            "Reset apps &amp; bookmarks</button>\n",
+            # Both left-hand buttons in one flex group, so the row's
+            # space-between still pushes Done to the right and the pair can wrap
+            # on a narrow panel instead of squeezing it.
+            '          <span style="display:flex;flex-wrap:wrap;gap:10px">\n'
+            '          <button sc-camel-on-click="{{ addExamples }}"'
+            ' title="12 apps and 4 bookmark groups to try the page with"'
+            ' style="background:none;border:1px solid rgba(255,255,255,.18);border-radius:7px;'
+            "padding:9px 16px;font-size:13px;font-weight:600;letter-spacing:.4px;color:#dfe3e8;"
+            'cursor:pointer;font-family:inherit" style-hover="background:rgba(255,255,255,.08)">'
+            "Add examples</button>\n"
+            '          <button sc-camel-on-click="{{ resetDefaults }}" style="background:none;'
+            "border:1px solid rgba(224,138,138,.4);border-radius:7px;padding:9px 16px;"
+            "font-size:13px;font-weight:600;letter-spacing:.4px;color:#e08a8a;cursor:pointer;"
+            'font-family:inherit" style-hover="background:rgba(224,138,138,.12)">'
+            "Reset apps &amp; bookmarks</button>\n"
+            "          </span>\n",
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
@@ -2605,7 +2679,11 @@ def apply_js_patches(body: str) -> str:
                            # After ENTER_SAVE_PATCHES: it extends the handler
                            # body that patch rewrites.
                            + KEYBIND_PATCHES
-                           + CAT_DELETE_PATCHES):
+                           + CAT_DELETE_PATCHES
+                           # Last: its anchors are the resetDefaults handler and
+                           # the Reset button, which the patches above insert
+                           # around but leave intact.
+                           + EXAMPLE_PATCHES):
         n = body.count(old)
         if n != 1:
             raise ValueError("expected 1 site for %r, found %d" % (name, n))
@@ -2614,16 +2692,22 @@ def apply_js_patches(body: str) -> str:
 
 
 def empty_defaults(body: str) -> str:
-    """Rewrite the placeholder default apps/bookmarks to empty lists.
+    """Make the default apps/bookmarks empty, keeping the demo data as examples.
 
-    Matches from the method signature to the first closing brace at method
-    indentation. A function replacement is used rather than a string so that the
-    escaped \\n sequences in the template are not read as regex escapes.
+    defaultApps() becomes exampleApps() with its body intact, and a new
+    defaultApps() returning [] takes its place; likewise for the groups. Matches
+    from the method signature to the first closing brace at method indentation. A
+    function replacement is used rather than a string so that the escaped \\n
+    sequences in the template are not read as regex escapes.
     """
     for name in EMPTIED_DEFAULTS:
+        example = name.replace("default", "example")
         pattern = re.compile(r"static " + name + r"\(\) \{.*?\\n  \}")
-        replacement = "static %s() {\\n    return [];\\n  }" % name
-        body, n = pattern.subn(lambda m: replacement, body)
+        emptied = "\\n\\n  static %s() {\\n    return [];\\n  }" % name
+        body, n = pattern.subn(
+            lambda m: m.group(0).replace("static " + name, "static " + example, 1) + emptied,
+            body,
+        )
         if n != 1:
             raise ValueError("expected 1 %s() definition, found %d" % (name, n))
     return body
@@ -2720,7 +2804,7 @@ def main(src: str, dst: str) -> int:
     # Belt and braces: nothing outside the manifest's own bundled-resource keys
     # (which are lookup ids, never fetched) may reference a remote host. The
     # user's own service links live in localStorage, not here; the *.example.com
-    # placeholders in defaultApps() are meant to be edited in the UI.
+    # placeholders in exampleApps() are meant to be edited in the UI.
     leaks = [
         h
         for h in ("cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com")

@@ -61,6 +61,11 @@ they clear the stored config, the page falls back to the 12 `*.example.com` demo
 apps and 4 bookmark groups, and `componentDidMount()` calls `saveLS()` on mount
 — so the next page load persists the demo data again and undoes the reset.
 
+The demo data is not thrown away: the original methods are renamed
+`exampleApps()` and `exampleGroups()`, and the **Add examples** button next to
+Reset in the settings panel puts them back on request — see
+[Add examples](#add-examples) below.
+
 Emptying the defaults changes only the fallback. Placeholders already written
 into the stored config stay until it is wiped, so the first time you need both a
 rebuild and a reset.
@@ -78,6 +83,25 @@ fireHomeStorage.reset()
 # 3. everything, from the shell — snapshots to history/ first:
 curl -X DELETE http://<host-lan-ip>:8080/api/config
 ```
+
+### Add examples
+
+The opposite of Reset, and deliberately not symmetrical with it: it adds to the
+dashboard rather than replacing it. Example apps whose URL is already present
+and groups whose name already exists (case-insensitively) are skipped, so the
+button is idempotent, and it can top up a dashboard that has lost a few of them.
+On an empty dashboard it acts without asking. On a populated one it asks first,
+naming how many apps and groups it would add. When there is nothing left to add
+it says so and writes nothing.
+
+Everything it adds gets a fresh `uid()`. The demo data reuses icon names as ids
+(`plex`, `g1`, …) and `nextcloud` is both an app and a bookmark; that only works
+at startup because `dedupeIds()` runs in the constructor, and drag-and-drop
+matches nodes by id, so items added at runtime have to arrive unique. It saves
+through `persist()`, the same path the editor uses, so the result lands on the
+config service and follows you to the next browser. `EXAMPLE_PATCHES` in
+`localize.py` is the whole change; `tests/examples.mjs` covers each of these
+behaviours.
 
 ### The two "add" buttons
 
