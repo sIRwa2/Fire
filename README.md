@@ -7,6 +7,8 @@ follows [Flame](https://github.com/pawelmalak/flame).
 Everything is served from one container on your LAN. It reaches the internet only
 when you ask it to — see [Risks and trade-offs](#risks-and-trade-offs).
 
+![firehome showing the example apps and bookmarks](screenshot.png)
+
 ## Icons: what to expect
 
 **You get 3,233 icons in the box.** They install with the app, work offline, and
@@ -43,7 +45,7 @@ install, or on a normal page load.
 You need Docker with the Compose plugin, and nothing else.
 
 ```sh
-git clone <this-repo> firehome
+git clone https://github.com/sIRwa2/Fire.git firehome
 cd firehome
 docker compose up -d --build
 ```
