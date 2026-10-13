@@ -3,3 +3,7 @@ __pycache__/
 node_modules/
 package.json
 package-lock.json
+down/.venv/
+down/data/
+down/cookies.txt
+tests/

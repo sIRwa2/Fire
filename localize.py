@@ -2650,6 +2650,218 @@ EXAMPLE_PATCHES = tuple(
 )
 
 
+# ── Instagram downloads from the search bar ─────────────────────────────────
+# A "down" button sits inside the search field. Paste a post, reel or TV link,
+# press it, and the media shows up in a panel between the bar and the header,
+# each tile a download link, plus a zip of the lot for a carousel.
+#
+# The fetching is done by the down service (down/app.py, yt-dlp), which nginx
+# proxies at /down/ on the same origin. That is what keeps the CSP closed: the
+# page only ever talks to 'self', thumbnails included, and Instagram's CDN — which
+# refuses cross-site requests anyway — is only reached from the server.
+#
+# The panel is a sibling of the form, not a child. .hdr-search is opacity 0
+# until hovered, so anything inside it would vanish the moment the pointer left
+# the bar. Outside it, the panel is in normal flow ahead of the header, so the
+# header, the apps and the bookmarks all move down to make room for it rather
+# than having it painted over them.
+#
+# Every request carries a ticket. Closing the panel or pressing down again
+# bumps it, so a slow answer for a link the user has moved on from is dropped
+# instead of reopening the panel.
+#
+# The button is type="button": a plain button in a form is a submit button, and
+# pressing it would run the web search for the pasted URL as well.
+DOWN_BASE = "/down"
+DOWN_CSS = (
+    # Room for the button at the right of the field. The native clear (×) keeps
+    # working and lands just left of the button. [name=q] for specificity over
+    # the padding shorthand in SEARCH_CSS.
+    ".hdr-search input[name=q]{padding-right:66px}"
+    ".hdr-down{position:absolute;right:7px;top:50%;transform:translateY(-50%);"
+    "padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.14);"
+    "background:rgba(255,255,255,.06);color:#9aa3ad;font-family:inherit;"
+    "font-size:12px;font-weight:600;letter-spacing:.4px;cursor:pointer;"
+    "outline:none;transition:color .16s ease,border-color .16s ease}"
+    ".hdr-down:hover,.hdr-down:focus-visible{color:#f2f4f6;border-color:var(--accent)}"
+    # Same bottom margin as the bar, for the same reason: it collapses against
+    # the header's margin-top, so the gap below the panel matches the one the
+    # header has without it.
+    ".hdr-dl{margin:0 0 " + str(HEADER_GAP) + "px;padding:12px 14px;"
+    "border-radius:9px;border:1px solid rgba(255,255,255,.1);"
+    "background:rgba(255,255,255,.04)}"
+    ".hdr-dl-top{display:flex;align-items:center;justify-content:space-between;"
+    "gap:10px;min-height:26px}"
+    ".hdr-dl-title{font-size:13.5px;color:#dfe3e8;overflow:hidden;"
+    "text-overflow:ellipsis;white-space:nowrap}"
+    ".hdr-dl-acts{display:flex;align-items:center;gap:6px;flex:none}"
+    ".hdr-dl-btn{padding:5px 11px;border-radius:6px;"
+    "border:1px solid rgba(255,255,255,.18);background:none;color:#dfe3e8;"
+    "font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}"
+    ".hdr-dl-btn:hover{background:rgba(255,255,255,.08)}"
+    ".hdr-dl-x{background:none;border:0;color:#9aa3ad;font-size:20px;"
+    "line-height:1;padding:0 4px;cursor:pointer;font-family:inherit}"
+    ".hdr-dl-x:hover{color:#f2f4f6}"
+    ".hdr-dl-err{margin-top:8px;font-size:12.5px;color:#e08a8a}"
+    ".hdr-dl-grid{display:grid;"
+    "grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;"
+    "margin-top:12px}"
+    ".hdr-dl-item{position:relative;display:block;aspect-ratio:4/5;"
+    "border-radius:7px;overflow:hidden;background:rgba(255,255,255,.06)}"
+    ".hdr-dl-item img{display:block;width:100%;height:100%;object-fit:cover}"
+    ".hdr-dl-kind{position:absolute;left:6px;top:6px;padding:2px 6px;"
+    "border-radius:4px;background:rgba(0,0,0,.6);color:#fff;font-size:10.5px}"
+    ".hdr-dl-get{position:absolute;right:6px;bottom:6px;width:26px;height:26px;"
+    "border-radius:50%;display:flex;align-items:center;justify-content:center;"
+    "background:var(--accent);color:#1d2026;font-weight:700}"
+)
+
+DOWN_PATCHES = tuple(
+    (name, tpl(old), tpl(new))
+    for name, old, new in (
+        (
+            "down handlers",
+            "  chooseEngine = (e) =>",
+            """  downFileUrl(url, name, inline) {
+    return '""" + DOWN_BASE + """/api/file?url=' + encodeURIComponent(url)
+      + '&name=' + encodeURIComponent(name) + (inline ? '&inline=1' : '');
+  }
+  runDown = () => {
+    const input = this.rootRef.current
+      && this.rootRef.current.querySelector('.hdr-search input[name=q]');
+    const url = input ? input.value.trim() : '';
+    this.closeSuggest();
+    const ticket = this._downTicket = (this._downTicket || 0) + 1;
+    if (!url) {
+      this.setState({ down: { error: 'Paste an Instagram post or reel link first.' } });
+      return;
+    }
+    this.setState({ down: { busy: 'Fetching post…' } });
+    fetch('""" + DOWN_BASE + """/api/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url })
+    }).then(r => r.json().then(d => ({ ok: r.ok, d }), () => ({ ok: false,
+      d: { error: 'The download service did not answer (' + r.status + ').' } })))
+      .then(({ ok, d }) => {
+        if (ticket !== this._downTicket) return;
+        if (!ok) throw new Error(d.error || 'Request failed.');
+        if (!d.items || !d.items.length) throw new Error('No downloadable media in this post.');
+        this.setState({ down: { post: d } });
+      })
+      .catch(err => {
+        if (ticket !== this._downTicket) return;
+        const msg = err instanceof TypeError
+          ? 'Could not reach the download service.' : err.message;
+        this.setState({ down: { error: msg } });
+      });
+  };
+  closeDown = () => {
+    this._downTicket = (this._downTicket || 0) + 1;
+    this.setState({ down: null });
+  };
+  downZip = () => {
+    const d = this.state.down;
+    const post = d && d.post;
+    if (!post || d.zipping) return;
+    const ticket = this._downTicket;
+    const done = (error) => {
+      if (ticket === this._downTicket) this.setState({ down: { post, error } });
+    };
+    this.setState({ down: { post, zipping: true } });
+    fetch('""" + DOWN_BASE + """/api/zip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: post.shortcode, files: post.items })
+    }).then(r => {
+      if (!r.ok) throw new Error('The zip failed (' + r.status + ').');
+      return r.blob();
+    }).then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (post.shortcode || 'instagram') + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      done('');
+    }).catch(err => done(err instanceof TypeError
+      ? 'Could not reach the download service.' : err.message));
+  };
+  chooseEngine = (e) =>""",
+        ),
+        (
+            "expose the download panel",
+            "      pickSuggest: this.pickSuggest,\n",
+            """      pickSuggest: this.pickSuggest,
+      runDown: this.runDown,
+      closeDown: this.closeDown,
+      downZip: this.downZip,
+      downShown: !!s.down,
+      downTitle: !s.down ? '' : s.down.busy ? s.down.busy
+        : s.down.post ? (s.down.post.username ? '@' + s.down.post.username : 'Instagram')
+          + ' · ' + s.down.post.items.length
+          + (s.down.post.items.length === 1 ? ' item' : ' items')
+        : 'Download',
+      downHasError: !!(s.down && s.down.error),
+      downError: (s.down && s.down.error) || '',
+      downHasPost: !!(s.down && s.down.post),
+      downMulti: !!(s.down && s.down.post && s.down.post.items.length > 1),
+      downZipLabel: s.down && s.down.zipping ? 'Zipping…' : 'Download all (.zip)',
+      downItems: (s.down && s.down.post ? s.down.post.items : []).map(it => ({
+        name: it.filename,
+        kind: it.type === 'video' ? 'Video' : 'Photo',
+        href: this.downFileUrl(it.url, it.filename, false),
+        hasThumb: !!it.thumbnail,
+        thumb: it.thumbnail ? this.downFileUrl(it.thumbnail, it.filename, true) : ''
+      })),
+""",
+        ),
+        (
+            "a down button inside the search field",
+            'sc-camel-on-blur="{{ closeSuggest }}">',
+            'sc-camel-on-blur="{{ closeSuggest }}">'
+            '<button type="button" class="hdr-down" '
+            'title="Download the Instagram post linked in the search field" '
+            'sc-camel-on-click="{{ runDown }}">down</button>',
+        ),
+        (
+            "the download panel, ahead of the header",
+            '</form><header data-screen-label="Header">',
+            "</form>"
+            '<sc-if value="{{ downShown }}" hint-placeholder-val="{{ false }}">'
+            '<section class="hdr-dl" aria-live="polite">'
+            '<div class="hdr-dl-top">'
+            '<span class="hdr-dl-title">{{ downTitle }}</span>'
+            '<span class="hdr-dl-acts">'
+            '<sc-if value="{{ downMulti }}" hint-placeholder-val="{{ false }}">'
+            '<button type="button" class="hdr-dl-btn" '
+            'sc-camel-on-click="{{ downZip }}">{{ downZipLabel }}</button>'
+            "</sc-if>"
+            '<button type="button" class="hdr-dl-x" title="Close" '
+            'aria-label="Close" sc-camel-on-click="{{ closeDown }}">&times;</button>'
+            "</span></div>"
+            '<sc-if value="{{ downHasError }}" hint-placeholder-val="{{ false }}">'
+            '<div class="hdr-dl-err">{{ downError }}</div>'
+            "</sc-if>"
+            '<sc-if value="{{ downHasPost }}" hint-placeholder-val="{{ false }}">'
+            '<div class="hdr-dl-grid">'
+            '<sc-for list="{{ downItems }}" as="it" hint-placeholder-count="3">'
+            '<a class="hdr-dl-item" href="{{ it.href }}" download="{{ it.name }}" '
+            'title="Download {{ it.name }}">'
+            '<sc-if value="{{ it.hasThumb }}" hint-placeholder-val="{{ false }}">'
+            '<img src="{{ it.thumb }}" alt="" loading="lazy">'
+            "</sc-if>"
+            '<span class="hdr-dl-kind">{{ it.kind }}</span>'
+            '<span class="hdr-dl-get">↓</span>'
+            "</a></sc-for></div></sc-if>"
+            "</section></sc-if>"
+            '<header data-screen-label="Header">',
+        ),
+    )
+)
+
+
 def apply_js_patches(body: str) -> str:
     """Apply the behavioural patches, asserting each target appears exactly once."""
     for name, old, new in (JS_PATCHES + ICON_UPDATE_PATCHES
@@ -2670,6 +2882,10 @@ def apply_js_patches(body: str) -> str:
                            # anchors are the runSearch body, the settings rows
                            # and the search input those two leave behind.
                            + SUGGEST_PATCHES
+                           # After SUGGEST_PATCHES: its anchors are the search
+                           # input's blur handler, the pickSuggest prop and the
+                           # </form> that patch leaves before the header.
+                           + DOWN_PATCHES
                            # Last: its anchors are what JS_PATCHES and
                            # CLIPBOARD_PATCHES leave behind.
                            # Anywhere: both anchor on export text nothing else
@@ -2725,7 +2941,7 @@ def patch_template(html: str) -> str:
     swipe = open(SWIPE_PATH, encoding="utf-8").read()
     tag = (
         HEAD_MARKUP
-        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + SEARCH_CSS + SUGGEST_CSS
+        + "<style>" + PAGE_WRAP_CSS + HEADER_CSS + SEARCH_CSS + SUGGEST_CSS + DOWN_CSS
         + ADD_BUTTON_CSS + ADD_LABEL_CSS
         + CARD_MARGIN_CSS
         + HDR_BUTTON_CSS + EMPTY_STATE_CSS + HOVER_FALLBACK_CSS

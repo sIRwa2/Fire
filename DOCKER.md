@@ -100,8 +100,7 @@ at startup because `dedupeIds()` runs in the constructor, and drag-and-drop
 matches nodes by id, so items added at runtime have to arrive unique. It saves
 through `persist()`, the same path the editor uses, so the result lands on the
 config service and follows you to the next browser. `EXAMPLE_PATCHES` in
-`localize.py` is the whole change; `tests/examples.mjs` covers each of these
-behaviours.
+`localize.py` is the whole change.
 
 ### The two "add" buttons
 
@@ -205,25 +204,6 @@ through the proxy and survives an `api` restart. Non-destructive: the write uses
 a scratch key and removes it afterwards. Docker-dependent checks are skipped
 when `docker` isn't on `PATH`.
 
-`tests/render.mjs` covers what `verify.sh` cannot: whether the page actually
-*looks* right. It drives the deployed URL in real WebKit — the engine Safari uses
-— and in Chromium, asserting the computed layout, that every `<style>` attached,
-that the add buttons have no outline in both the empty and populated states, that
-hover reveals them, and that nothing is requested off-host. Optional, since it
-needs a few hundred MB of browsers:
-
-```sh
-npm install playwright
-npx playwright install --with-deps webkit chromium
-node tests/render.mjs http://<host-ip>:8080
-```
-
-It is non-destructive: the config is stubbed per-page rather than written, so the
-deployed dashboard is neither read nor modified. Seeding `localStorage` would not
-work — with the service reachable the shim treats the server as authoritative —
-and the shim's first read is a synchronous XHR, which WebKit does not put through
-route interception, so that one call is stubbed in-page.
-
 Still needs eyes: that config follows you to a second physical device.
 
 ## Self-containment
@@ -295,13 +275,12 @@ The horizontal padding is cancelled by an equal negative margin
 (`CARD_SIDE_BLEED`). Without it every icon and title shifts 12px right and stops
 lining up with the section heading and the bookmark rows below; with it the
 content stays exactly where it was and only the highlight grows outwards. Two
-constraints keep that safe, both asserted in `tests/run.sh`:
+constraints keep that safe:
 
 - The bleed is **half** the grid's 24px column gap, so neighbouring cards end up
   touching rather than overlapping — more would collide their hit areas.
 - `.page-wrap`'s own padding absorbs it at both edges, including on a phone where
-  the wrapper goes to `width: 100%`. `tests/cards.mjs` checks that in all three
-  mobile layouts.
+  the wrapper goes to `width: 100%`, in all three mobile layouts.
 
 The add button gets the same rule, since grid items stretch to the row height and
 a difference would leave one hover area taller than the other. Its own
@@ -543,10 +522,8 @@ Three guards, in order of how easy each is to get wrong:
 | `isComposing` | Enter confirming an IME candidate would submit the dialog |
 
 `saveModal` needs no extra validation: its own guard is character for character
-what `saveDisabled` uses for the button, so Enter can never save what Add refuses —
-and `tests/run.sh` fails if those two conditions ever drift apart. The first two
-guards are verified by removing them from a built page and checking the
-corresponding assertion in `tests/url-title.mjs` goes red.
+what `saveDisabled` uses for the button, so Enter can never save what Add refuses.
+Keep the two conditions identical if either one changes.
 
 The tiles have their background and border removed. **They are targeted by
 `span[data-icon]`, not by the `.scpx` class you see in devtools.** That class is
@@ -620,7 +597,6 @@ Like every other behavioural change, this is a `localize.py` patch against the
 exported markup, not an edit to `firehome.html`: a re-export brings the click
 handler back, and the patch's hit-count assertion is what turns that into a build
 failure rather than a bug that quietly returns.
-`tests/modal-backdrop.mjs` drives all three gestures.
 
 ## Bookmarks and apps are the same kind of thing
 
@@ -775,9 +751,8 @@ docker compose up -d --build
 `POST /api/favicon` returns 503 with that command when it cannot write, and the
 page logs the reason to the browser console rather than failing silently.
 
-This is the same mistake `/data/icons` made earlier, so `tests/run.sh` now checks
-every volume mountpoint in the compose file against the `mkdir` list in the api
-image, instead of relying on the two being kept in step by hand.
+This is the same mistake `/data/icons` made earlier: every volume mountpoint in
+the compose file needs a matching entry in the api image's `mkdir` list.
 
 ## What the lock actually locks
 
@@ -896,8 +871,7 @@ while a finger is down, or the movement would lag a fifth of a second behind it.
 Past halfway on release it opens, otherwise it springs back.
 
 The buttons must never become unreachable, since the lock button is the only way
-out of a locked dashboard. So the whole thing is gated three ways, all asserted in
-`tests/run.sh`:
+out of a locked dashboard. So the whole thing is gated three ways:
 
 | gate | why |
 | --- | --- |
@@ -950,10 +924,6 @@ them are easy to get wrong:
 - `.bm-cat a[data-drag-id]` — a bookmark title span has no size of its own and
   inherits 14.5px from its anchor, so the anchor is what gets sized.
 
-`tests/font-sizes.mjs` sets each control in turn and asserts the intended element
-moved *and* that none of the others did, which is what catches a selector that is
-too broad.
-
 ## Themes in a dropdown
 
 The 18 built-in themes were a two-column grid of buttons — nine rows, most of the
@@ -970,11 +940,6 @@ The cost is the colour swatch each button carried. The accent and background
 pickers sit directly above, so the preview is still there. Option popups are drawn
 by the OS, so `color-scheme: dark` is set to stop the list rendering light against
 the panel.
-
-`tests/theme-select.mjs` checks that `sc-for` really does produce `<option>`
-elements through the runtime, that choosing one applies and persists it, that the
-choice comes back selected after a reload, and that a hand-picked colour falls back
-to Custom.
 
 ### Typing a hex colour
 
@@ -1004,11 +969,6 @@ anything that is not exactly `#rrggbb`.
 The rows wrap now. Five swatches, the picker and a 92px field are wider than the
 panel on a phone, and wrapping beats the horizontal scroll the panel would
 otherwise get.
-
-`tests/hex-color.mjs` covers the parsing (pasted, typed a character at a time,
-shorthand, junk), that the colour reaches both the CSS variable and the native
-picker, that a swatch click is reflected back into the field, that a typed colour
-survives a reload — and that React logs no warning about the input.
 
 ## Icon updates
 
@@ -1075,13 +1035,6 @@ exactly why the resolving happens in Python.
 `resolve()` runs on every api start as well as after an update, so a preference
 restored from a backup, or a library dropped from the image, cannot leave the
 directory stale.
-
-`tests/icons_test.py` pins the resolution rules offline — who wins a shared name,
-that a demoted library's unique icons stay served, that a disabled one is hidden
-from the picker but still reachable, and that nothing in the two roots is ever
-copied into `resolved/`. `tests/icon-libraries.mjs` covers the other half in a real
-browser with the api stubbed: that each row's promote, update and toggle reaches
-the right endpoint naming the right library.
 
 **The picker's list was the real obstacle.** It ships baked into the page as
 `__icons_data`, separately from the files, and the two already disagreed: 3222
@@ -1226,8 +1179,7 @@ node tools/make-favicon.mjs      # after replacing favicon.svg
 All four are committed, so the Docker build never runs it. To change the icon,
 replace `favicon.svg` and re-run.
 
-It renders with a headless browser, which is already a dev dependency for
-`tests/render.mjs`. That replaced a hand-rolled stdlib rasteriser, and the reason
+It renders with a headless browser (playwright). That replaced a hand-rolled stdlib rasteriser, and the reason
 is worth recording: that one drew geometry defined in its own source, where
 even-odd filling was safe because it controlled the shapes. The artwork is now an
 SVG with inner subpaths for the windows, and SVG's default fill rule is *nonzero*
@@ -1252,13 +1204,11 @@ with a 1x1 transparent GIF so they stop showing up as 404s.
 Re-export `firehome.html`, then:
 
 ```sh
-./tests/run.sh                  # needs python3 + node; no Docker required
 docker compose up -d --build
 ./verify.sh
 ```
 
-`tests/run.sh` checks what a re-export can quietly break: that `localize.py`
-still finds its patch targets, that it runs with only the files the Dockerfile
-copies, and that the shim still satisfies the contract the dashboard relies on.
+The build stops with an error if `localize.py` no longer finds one of its
+patch targets in the new export.
 `index.html` is served with `Cache-Control: no-cache`, so a reload picks it up;
 icons are cached for a year since they're addressed by name.

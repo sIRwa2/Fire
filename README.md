@@ -241,8 +241,8 @@ actually bite you.
 
 - **The build patches the bundle by matching exact strings.** Re-exporting
   `firehome.html` can move any of them. Every patch asserts its hit count, so the
-  build fails loudly rather than silently dropping a change — run
-  `./tests/run.sh` after a re-export and fix what it reports.
+  build fails loudly rather than silently dropping a change, so fix what it
+  reports after a re-export.
 - **The api container bind-mounts `./svg` from the repo**, so it expects to be
   started from a checkout. Without it the updater sees no baked icons and would
   try to fetch all 3232.
@@ -251,40 +251,6 @@ The api container runs unprivileged with `cap_drop: ALL`, `no-new-privileges`, a
 read-only root filesystem and no published port — reachable only through nginx.
 That limits what a bug in it can reach; it does not make the endpoints safe to
 expose. Don't port-forward this.
-
-## Testing
-
-Not needed to run the dashboard. `./verify.sh` (above) is the one worth knowing.
-
-```sh
-./tests/run.sh          # build-time + api checks; python3 + node, no Docker needed
-```
-
-The rest drive a real browser and need playwright:
-
-```sh
-npm install playwright && npx playwright install --with-deps webkit chromium
-node tests/render.mjs http://<host-ip>:8080
-```
-
-`render.mjs` is the broad one — it confirms the page renders in WebKit and
-Chromium, and covers layout, the search bar, the engine picker, suggestions and
-the keyboard shortcuts. It stubs the config per-page, so the deployed dashboard is
-neither read nor written. The others each isolate one behaviour:
-
-| | |
-| --- | --- |
-| `lock-state.mjs`, `lock-persist.mjs` | What the lock hides, and that it survives a reload. |
-| `theme-select.mjs`, `theme-persist.mjs`, `font-sizes.mjs` | The theme dropdown, the colour pickers, each size control. |
-| `mobile.mjs`, `header-swipe.mjs` | The three mobile layouts, and swipe-to-reveal on a phone. |
-| `cards.mjs`, `url-title.mjs` | App card padding and alignment; URL → Title in the real dialog. |
-| `icon-libraries.mjs` | The Icons rows: update, promote and enable each reach the api with the right library. |
-| `modal-backdrop.mjs` | The add-entry dialog closes on a backdrop click, but not on a drag that crosses its edge. |
-| `hex-color.mjs` | The accent/background hex fields: what they accept, apply and persist. |
-| `examples.mjs` | Add examples: fills an empty dashboard without asking, asks before adding to a populated one, never duplicates, and leaves Reset working. |
-
-Worth doing by hand either way: load the same URL on a second device and check
-your config follows you.
 
 ## What's here
 
@@ -300,18 +266,17 @@ your config follows you.
 | `favicon.svg` | The site icon, and the source of truth for it. Replace it and re-run `tools/make-favicon.mjs` to regenerate the raster fallbacks. |
 | `api/suggest.py` | Search-suggestion proxy. Fetches the engine server-side; off unless enabled. |
 | `svg/` | The homarr-labs icon set, served at `/icons/` so nothing loads from a CDN. The other libraries are downloaded into a volume, not committed here. |
-| `verify.sh`, `tests/` | Post-deploy and build-time checks. |
+| `down/` | The Instagram downloader behind the search bar's **down** button (yt-dlp). See [down/README.md](down/README.md). |
+| `verify.sh` | Post-deploy checks. |
 
 ## After re-exporting firehome.html
 
 ```sh
-./tests/run.sh && docker compose up -d --build && ./verify.sh
+docker compose up -d --build && ./verify.sh
 ```
 
-`tests/run.sh` covers what a re-export can quietly break: that `localize.py`
-still finds its patch targets, that it runs with only the files the Dockerfile
-copies, and that the storage shim still satisfies the contract the page relies
-on.
+The build stops with an error if `localize.py` no longer finds one of its patch
+targets in the new export.
 
 See [DOCKER.md](DOCKER.md) for how the storage, layout, favicon and
 self-containment pieces actually work.

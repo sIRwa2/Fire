@@ -49,6 +49,25 @@ services:
     tmpfs:
       - /tmp
 
+  # Instagram downloader for the search bar's "down" button. Not published —
+  # nginx proxies /down/ to it. Needs outbound internet to reach Instagram.
+  # Drop a cookies.txt into ./down/data to download as a logged-in user; see
+  # down/README.md.
+  down:
+    build: ./down
+    image: firehome-down:local
+    container_name: firehome-down
+    restart: unless-stopped
+    volumes:
+      - ./down/data:/data:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+
 volumes:
   firehome-data:
   firehome-icons:
