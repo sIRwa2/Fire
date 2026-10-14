@@ -2650,15 +2650,16 @@ EXAMPLE_PATCHES = tuple(
 )
 
 
-# ── Instagram downloads from the search bar ─────────────────────────────────
-# A "down" button sits inside the search field. Paste a post, reel or TV link,
-# press it, and the media shows up in a panel between the bar and the header,
+# ── Instagram and Reddit downloads from the search bar ──────────────────────
+# A "down" button sits inside the search field. Paste an Instagram post, reel or
+# TV link, or a Reddit post or share link, press it, and the media shows up in a panel between the bar and the header,
 # each tile a download link, plus a zip of the lot for a carousel.
 #
 # The fetching is done by the down service (down/app.py, yt-dlp), which nginx
 # proxies at /down/ on the same origin. That is what keeps the CSP closed: the
-# page only ever talks to 'self', thumbnails included, and Instagram's CDN — which
-# refuses cross-site requests anyway — is only reached from the server.
+# page only ever talks to 'self', thumbnails included, and the Instagram and
+# Reddit CDNs — Instagram's refuses cross-site requests anyway — are only reached
+# from the server.
 #
 # The panel is a sibling of the form, not a child. .hdr-search is opacity 0
 # until hovered, so anything inside it would vanish the moment the pointer left
@@ -2722,9 +2723,10 @@ DOWN_PATCHES = tuple(
         (
             "down handlers",
             "  chooseEngine = (e) =>",
-            """  downFileUrl(url, name, inline) {
+            """  downFileUrl(url, name, inline, merge) {
     return '""" + DOWN_BASE + """/api/file?url=' + encodeURIComponent(url)
-      + '&name=' + encodeURIComponent(name) + (inline ? '&inline=1' : '');
+      + '&name=' + encodeURIComponent(name) + (inline ? '&inline=1' : '')
+      + (merge ? '&merge=1' : '');
   }
   runDown = () => {
     const input = this.rootRef.current
@@ -2733,7 +2735,7 @@ DOWN_PATCHES = tuple(
     this.closeSuggest();
     const ticket = this._downTicket = (this._downTicket || 0) + 1;
     if (!url) {
-      this.setState({ down: { error: 'Paste an Instagram post or reel link first.' } });
+      this.setState({ down: { error: 'Paste an Instagram or Reddit post link first.' } });
       return;
     }
     this.setState({ down: { busy: 'Fetching post…' } });
@@ -2779,7 +2781,7 @@ DOWN_PATCHES = tuple(
     }).then(blob => {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = (post.shortcode || 'instagram') + '.zip';
+      a.download = (post.shortcode || 'media') + '.zip';
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -2799,7 +2801,8 @@ DOWN_PATCHES = tuple(
       downZip: this.downZip,
       downShown: !!s.down,
       downTitle: !s.down ? '' : s.down.busy ? s.down.busy
-        : s.down.post ? (s.down.post.username ? '@' + s.down.post.username : 'Instagram')
+        : s.down.post ? (s.down.post.label
+          || (s.down.post.username ? '@' + s.down.post.username : 'Post'))
           + ' · ' + s.down.post.items.length
           + (s.down.post.items.length === 1 ? ' item' : ' items')
         : 'Download',
@@ -2811,7 +2814,7 @@ DOWN_PATCHES = tuple(
       downItems: (s.down && s.down.post ? s.down.post.items : []).map(it => ({
         name: it.filename,
         kind: it.type === 'video' ? 'Video' : 'Photo',
-        href: this.downFileUrl(it.url, it.filename, false),
+        href: this.downFileUrl(it.url, it.filename, false, it.merge),
         hasThumb: !!it.thumbnail,
         thumb: it.thumbnail ? this.downFileUrl(it.thumbnail, it.filename, true) : ''
       })),
@@ -2822,7 +2825,7 @@ DOWN_PATCHES = tuple(
             'sc-camel-on-blur="{{ closeSuggest }}">',
             'sc-camel-on-blur="{{ closeSuggest }}">'
             '<button type="button" class="hdr-down" '
-            'title="Download the Instagram post linked in the search field" '
+            'title="Download the Instagram or Reddit post linked in the search field" '
             'sc-camel-on-click="{{ runDown }}">down</button>',
         ),
         (

@@ -1,6 +1,6 @@
 # Insta Grabber
 
-Paste an Instagram post / reel link, select photos & videos, download them (single file or zip).
+Paste an Instagram post / reel link (or a Reddit post), select photos & videos, download them (single file or zip).
 
 ## In firehome
 
@@ -8,8 +8,20 @@ firehome runs this as the `down` service in `docker-compose.yml`; nginx proxies
 `/down/` to it. Paste a link into the search bar and press **down**: the media
 appears in a panel under the bar, each tile a download, plus a zip for carousels.
 
-Cookies go in `down/data/cookies.txt` (mounted read-only at `/data` in the
-container). No rebuild or restart is needed after adding or replacing it.
+Cookies go in `down/data/` (mounted read-only at `/data` in the container):
+`cookies.txt` for Instagram, `reddit-cookies.txt` for Reddit. No rebuild or
+restart is needed after adding or replacing either.
+
+## Reddit
+
+Post links (`/r/<sub>/comments/…`), share links (`/r/<sub>/s/…`), `redd.it/…`
+and old/new/mobile reddit all work. Images, galleries and GIFs download as-is.
+Reddit videos keep picture and sound in separate streams, so the server merges
+them with ffmpeg; expect a few seconds' wait before a video download starts.
+
+Reddit blocks anonymous requests from many IPs (datacenters especially). If the
+panel says Reddit wouldn't serve the post, export cookies for reddit.com the same
+way as for Instagram below and save them as `down/data/reddit-cookies.txt`.
 
 ## Run
 

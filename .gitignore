@@ -7,3 +7,4 @@ down/.venv/
 down/data/
 down/cookies.txt
 tests/
+down/reddit-cookies.txt

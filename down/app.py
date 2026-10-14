@@ -1,7 +1,9 @@
-"""Instagram media downloader: paste a post/reel link, pick media, download."""
+"""Instagram and Reddit media downloader: paste a post link, pick media, download."""
 import io
 import os
 import re
+import shutil
+import tempfile
 import zipfile
 from urllib.parse import urlparse
 
@@ -10,9 +12,12 @@ from flask import Flask, Response, abort, jsonify, request, send_from_directory
 from yt_dlp import YoutubeDL
 from yt_dlp.extractor.instagram import InstagramIE
 
+import reddit
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIES = os.environ.get("IG_COOKIES", os.path.join(BASE_DIR, "cookies.txt"))
-ALLOWED_HOST_SUFFIXES = (".cdninstagram.com", ".fbcdn.net")
+REDDIT_COOKIES = os.environ.get("REDDIT_COOKIES", os.path.join(BASE_DIR, "reddit-cookies.txt"))
+ALLOWED_HOST_SUFFIXES = (".cdninstagram.com", ".fbcdn.net", ".redd.it")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 
 app = Flask(__name__, static_folder=None)
@@ -80,6 +85,36 @@ def _check_cdn_url(url):
         abort(400, "Only Instagram CDN URLs are allowed.")
 
 
+def _merged(url):
+    """Download a DASH manifest's best video + audio, merged into one mp4.
+
+    Returns (path, tmpdir); the caller removes tmpdir when done with the file.
+    """
+    tmp = tempfile.mkdtemp(prefix="down-")
+    opts = {"quiet": True, "no_warnings": True, "noprogress": True, "cachedir": False,
+            "format": "bv*+ba/b", "merge_output_format": "mp4",
+            "outtmpl": os.path.join(tmp, "media.%(ext)s")}
+    try:
+        with YoutubeDL(opts) as ydl:
+            ydl.download([url])
+        files = [f for f in os.listdir(tmp) if f.startswith("media.")]
+        if not files:
+            raise RuntimeError("yt-dlp produced no file")
+        return os.path.join(tmp, files[0]), tmp
+    except Exception:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+
+
+def _stream_and_remove(path, tmp):
+    try:
+        with open(path, "rb") as f:
+            while chunk := f.read(64 * 1024):
+                yield chunk
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _safe_name(name, default):
     name = re.sub(r"[^A-Za-z0-9._-]", "_", name or "")[:100]
     return name or default
@@ -93,8 +128,15 @@ def index():
 @app.post("/api/info")
 def info():
     url = (request.get_json(silent=True) or {}).get("url", "").strip()
+    if reddit.suitable(url):
+        try:
+            return jsonify(reddit.fetch_post(url, REDDIT_COOKIES))
+        except reddit.RedditError as e:
+            return jsonify(error=str(e)), 502
+        except Exception as e:
+            return jsonify(error=f"Reddit: {e}"), 502
     if not InstagramIE.suitable(url):
-        return jsonify(error="That doesn't look like an Instagram post, reel or TV link."), 400
+        return jsonify(error="That doesn't look like an Instagram or Reddit post link."), 400
     try:
         return jsonify(fetch_post(url))
     except Exception as e:  # yt-dlp raises many error types; surface the message
@@ -112,6 +154,16 @@ def file():
     url = request.args.get("url", "")
     _check_cdn_url(url)
     name = _safe_name(request.args.get("name"), "media")
+    if request.args.get("merge") == "1":
+        try:
+            path, tmp = _merged(url)
+        except Exception as e:
+            abort(502, f"Could not merge the video: {e}")
+        return Response(_stream_and_remove(path, tmp), headers={
+            "Content-Type": "video/mp4",
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "Content-Length": str(os.path.getsize(path)),
+        })
     upstream = requests.get(url, stream=True, timeout=30, headers={"User-Agent": UA})
     if upstream.status_code != 200:
         abort(502, f"Instagram CDN returned {upstream.status_code}")
@@ -135,10 +187,18 @@ def zip_files():
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
         for i, f in enumerate(files, 1):
             _check_cdn_url(f.get("url", ""))
+            name = _safe_name(f.get("filename"), f"media_{i}")
+            if f.get("merge"):
+                path, tmp = _merged(f["url"])
+                try:
+                    zf.write(path, name)
+                finally:
+                    shutil.rmtree(tmp, ignore_errors=True)
+                continue
             r = requests.get(f["url"], timeout=60, headers={"User-Agent": UA})
             r.raise_for_status()
-            zf.writestr(_safe_name(f.get("filename"), f"media_{i}"), r.content)
-    zip_name = _safe_name(data.get("name"), "instagram") + ".zip"
+            zf.writestr(name, r.content)
+    zip_name = _safe_name(data.get("name"), "media") + ".zip"
     return Response(buf.getvalue(), mimetype="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{zip_name}"'})
 
