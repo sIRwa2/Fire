@@ -2650,16 +2650,20 @@ EXAMPLE_PATCHES = tuple(
 )
 
 
-# ── Instagram and Reddit downloads from the search bar ──────────────────────
+# ── Instagram, Reddit and YouTube downloads from the search bar ─────────────
 # A "down" button sits inside the search field. Paste an Instagram post, reel or
-# TV link, or a Reddit post or share link, press it, and the media shows up in a panel between the bar and the header,
-# each tile a download link, plus a zip of the lot for a carousel.
+# TV link, a Reddit post or share link, or a YouTube video or short, press it,
+# and the media shows up in a panel between the bar and the header, each tile a
+# download link, plus a zip of the lot for a carousel. A YouTube video gets a
+# tile per choice: the video (up to 1080p, and the full size when there is
+# more) and the audio on its own.
 #
 # The fetching is done by the down service (down/app.py, yt-dlp), which nginx
 # proxies at /down/ on the same origin. That is what keeps the CSP closed: the
-# page only ever talks to 'self', thumbnails included, and the Instagram and
-# Reddit CDNs — Instagram's refuses cross-site requests anyway — are only reached
-# from the server.
+# page only ever talks to 'self', thumbnails included, and the Instagram, Reddit
+# and YouTube CDNs — Instagram's refuses cross-site requests anyway, and
+# YouTube's media URLs only work from the IP that asked for them — are only
+# reached from the server.
 #
 # The panel is a sibling of the form, not a child. .hdr-search is opacity 0
 # until hovered, so anything inside it would vanish the moment the pointer left
@@ -2723,10 +2727,11 @@ DOWN_PATCHES = tuple(
         (
             "down handlers",
             "  chooseEngine = (e) =>",
-            """  downFileUrl(url, name, inline, merge) {
+            """  downFileUrl(url, name, inline, merge, format) {
     return '""" + DOWN_BASE + """/api/file?url=' + encodeURIComponent(url)
       + '&name=' + encodeURIComponent(name) + (inline ? '&inline=1' : '')
-      + (merge ? '&merge=1' : '');
+      + (merge ? '&merge=1' : '')
+      + (format ? '&format=' + encodeURIComponent(format) : '');
   }
   runDown = () => {
     const input = this.rootRef.current
@@ -2735,7 +2740,7 @@ DOWN_PATCHES = tuple(
     this.closeSuggest();
     const ticket = this._downTicket = (this._downTicket || 0) + 1;
     if (!url) {
-      this.setState({ down: { error: 'Paste an Instagram or Reddit post link first.' } });
+      this.setState({ down: { error: 'Paste an Instagram, Reddit or YouTube link first.' } });
       return;
     }
     this.setState({ down: { busy: 'Fetching post…' } });
@@ -2813,8 +2818,9 @@ DOWN_PATCHES = tuple(
       downZipLabel: s.down && s.down.zipping ? 'Zipping…' : 'Download all (.zip)',
       downItems: (s.down && s.down.post ? s.down.post.items : []).map(it => ({
         name: it.filename,
-        kind: it.type === 'video' ? 'Video' : 'Photo',
-        href: this.downFileUrl(it.url, it.filename, false, it.merge),
+        kind: it.kind || (it.type === 'video' ? 'Video'
+          : it.type === 'audio' ? 'Audio' : 'Photo'),
+        href: this.downFileUrl(it.url, it.filename, false, it.merge, it.format),
         hasThumb: !!it.thumbnail,
         thumb: it.thumbnail ? this.downFileUrl(it.thumbnail, it.filename, true) : ''
       })),
@@ -2825,7 +2831,7 @@ DOWN_PATCHES = tuple(
             'sc-camel-on-blur="{{ closeSuggest }}">',
             'sc-camel-on-blur="{{ closeSuggest }}">'
             '<button type="button" class="hdr-down" '
-            'title="Download the Instagram or Reddit post linked in the search field" '
+            'title="Download the Instagram, Reddit or YouTube link in the search field" '
             'sc-camel-on-click="{{ runDown }}">down</button>',
         ),
         (

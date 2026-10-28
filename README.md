@@ -266,7 +266,7 @@ expose. Don't port-forward this.
 | `favicon.svg` | The site icon, and the source of truth for it. Replace it and re-run `tools/make-favicon.mjs` to regenerate the raster fallbacks. |
 | `api/suggest.py` | Search-suggestion proxy. Fetches the engine server-side; off unless enabled. |
 | `svg/` | The homarr-labs icon set, served at `/icons/` so nothing loads from a CDN. The other libraries are downloaded into a volume, not committed here. |
-| `down/` | The Instagram downloader behind the search bar's **down** button (yt-dlp). See [down/README.md](down/README.md). |
+| `down/` | The Instagram, Reddit and YouTube downloader behind the search bar's **down** button (yt-dlp). See [down/README.md](down/README.md). |
 | `verify.sh` | Post-deploy checks. |
 
 ## After re-exporting firehome.html

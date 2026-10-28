@@ -1,4 +1,4 @@
-"""Instagram and Reddit media downloader: paste a post link, pick media, download."""
+"""Instagram, Reddit and YouTube media downloader: paste a link, pick media, download."""
 import io
 import os
 import re
@@ -9,16 +9,31 @@ from urllib.parse import urlparse
 
 import requests
 from flask import Flask, Response, abort, jsonify, request, send_from_directory
+from werkzeug.exceptions import HTTPException
 from yt_dlp import YoutubeDL
 from yt_dlp.extractor.instagram import InstagramIE
 
 import reddit
+import youtube
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIES = os.environ.get("IG_COOKIES", os.path.join(BASE_DIR, "cookies.txt"))
 REDDIT_COOKIES = os.environ.get("REDDIT_COOKIES", os.path.join(BASE_DIR, "reddit-cookies.txt"))
-ALLOWED_HOST_SUFFIXES = (".cdninstagram.com", ".fbcdn.net", ".redd.it")
+YT_COOKIES = os.environ.get("YT_COOKIES", os.path.join(BASE_DIR, "youtube-cookies.txt"))
+# What /api/file will fetch: the CDNs that serve media and thumbnails, plus the
+# YouTube watch URLs that merged downloads hand to yt-dlp.
+ALLOWED_HOST_SUFFIXES = (".cdninstagram.com", ".fbcdn.net", ".redd.it", ".ytimg.com")
+ALLOWED_HOSTS = ("youtube.com", "www.youtube.com", "youtu.be")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+
+# yt-dlp format selectors a merged download may ask for, by key. Reddit's DASH
+# manifests only ever have one of each stream, so "video" fits them as well.
+FORMATS = {
+    "video": "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b",
+    "video-max": "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b",
+    "audio": "ba[ext=m4a]/ba/b",
+}
+MIME = {"mp4": "video/mp4", "m4a": "audio/mp4", "webm": "video/webm", "mkv": "video/x-matroska"}
 
 app = Flask(__name__, static_folder=None)
 
@@ -79,21 +94,39 @@ def fetch_post(url):
     }
 
 
+def _host(url):
+    return (urlparse(url).hostname or "").lower()
+
+
 def _check_cdn_url(url):
-    host = urlparse(url).hostname or ""
-    if urlparse(url).scheme != "https" or not host.endswith(ALLOWED_HOST_SUFFIXES):
-        abort(400, "Only Instagram CDN URLs are allowed.")
+    host = _host(url)
+    if urlparse(url).scheme != "https" or not (
+            host in ALLOWED_HOSTS or host.endswith(ALLOWED_HOST_SUFFIXES)):
+        abort(400, "Only Instagram, Reddit and YouTube URLs are allowed.")
 
 
-def _merged(url):
-    """Download a DASH manifest's best video + audio, merged into one mp4.
+def _is_youtube(url):
+    return _host(url) in ALLOWED_HOSTS
 
+
+def _merged(url, fmt="video"):
+    """Download the best streams for `fmt` (a FORMATS key), merged into one file.
+
+    Reddit videos and every YouTube download come through here: their picture
+    and sound are separate streams, and YouTube's media URLs are bound to the
+    IP that fetched them, so yt-dlp does the fetching on the user's behalf.
     Returns (path, tmpdir); the caller removes tmpdir when done with the file.
     """
+    if fmt not in FORMATS:
+        abort(400, "Unknown format.")
     tmp = tempfile.mkdtemp(prefix="down-")
     opts = {"quiet": True, "no_warnings": True, "noprogress": True, "cachedir": False,
-            "format": "bv*+ba/b", "merge_output_format": "mp4",
+            "noplaylist": True, "format": FORMATS[fmt], "merge_output_format": "mp4",
             "outtmpl": os.path.join(tmp, "media.%(ext)s")}
+    if fmt == "audio":
+        opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "m4a"}]
+    if _is_youtube(url) and os.path.isfile(YT_COOKIES):
+        opts["cookiefile"] = YT_COOKIES
     try:
         with YoutubeDL(opts) as ydl:
             ydl.download([url])
@@ -120,6 +153,12 @@ def _safe_name(name, default):
     return name or default
 
 
+def _clean_error(e):
+    """yt-dlp's message without its colour codes and [extractor] prefix."""
+    msg = re.sub(r"\x1b\[[0-9;]*m", "", str(e)).replace("ERROR: ", "")
+    return re.sub(r"^\[[\w:]+\] \S+: ", "", msg)
+
+
 @app.get("/")
 def index():
     return send_from_directory(os.path.join(BASE_DIR, "static"), "index.html")
@@ -135,13 +174,26 @@ def info():
             return jsonify(error=str(e)), 502
         except Exception as e:
             return jsonify(error=f"Reddit: {e}"), 502
+    if youtube.suitable(url):
+        try:
+            return jsonify(youtube.fetch_post(url, YT_COOKIES))
+        except youtube.YouTubeError as e:
+            return jsonify(error=str(e)), 502
+        except Exception as e:
+            msg = _clean_error(e)
+            if re.search(r"sign in|cookies|bot", msg, re.I):
+                msg = ("YouTube wants the server to sign in before serving this video. "
+                       + ("Your youtube-cookies.txt may be expired; re-export it." if os.path.isfile(YT_COOKIES)
+                          else "Add a youtube-cookies.txt from a logged-in browser (see down/README.md)."))
+            return jsonify(error=f"YouTube: {msg}"), 502
+    if youtube.is_youtube(url):
+        return jsonify(error="That's a YouTube playlist, channel or page link; paste a link to one video."), 400
     if not InstagramIE.suitable(url):
-        return jsonify(error="That doesn't look like an Instagram or Reddit post link."), 400
+        return jsonify(error="That doesn't look like an Instagram, Reddit or YouTube link."), 400
     try:
         return jsonify(fetch_post(url))
     except Exception as e:  # yt-dlp raises many error types; surface the message
-        msg = re.sub(r"\x1b\[[0-9;]*m", "", str(e)).replace("ERROR: ", "")
-        msg = re.sub(r"^\[\w+\] \S+: ", "", msg)
+        msg = _clean_error(e)
         if re.search(r"cookies|login|rate-limit|empty media response", msg, re.I):
             msg = ("Instagram wouldn't serve this post anonymously (private post or rate limit). "
                    + ("Your cookies.txt may be expired; re-export it." if os.path.isfile(COOKIES)
@@ -156,17 +208,22 @@ def file():
     name = _safe_name(request.args.get("name"), "media")
     if request.args.get("merge") == "1":
         try:
-            path, tmp = _merged(url)
+            path, tmp = _merged(url, request.args.get("format", "video"))
+        except HTTPException:
+            raise
         except Exception as e:
-            abort(502, f"Could not merge the video: {e}")
+            abort(502, f"Could not download the video: {_clean_error(e)}")
+        ext = path.rsplit(".", 1)[-1].lower()
         return Response(_stream_and_remove(path, tmp), headers={
-            "Content-Type": "video/mp4",
+            "Content-Type": MIME.get(ext, "application/octet-stream"),
             "Content-Disposition": f'attachment; filename="{name}"',
             "Content-Length": str(os.path.getsize(path)),
         })
+    if _is_youtube(url):
+        abort(400, "YouTube downloads go through merge=1.")
     upstream = requests.get(url, stream=True, timeout=30, headers={"User-Agent": UA})
     if upstream.status_code != 200:
-        abort(502, f"Instagram CDN returned {upstream.status_code}")
+        abort(502, f"The CDN returned {upstream.status_code}")
     preview = request.args.get("inline") == "1"
     headers = {
         "Content-Type": upstream.headers.get("Content-Type", "application/octet-stream"),
@@ -188,8 +245,8 @@ def zip_files():
         for i, f in enumerate(files, 1):
             _check_cdn_url(f.get("url", ""))
             name = _safe_name(f.get("filename"), f"media_{i}")
-            if f.get("merge"):
-                path, tmp = _merged(f["url"])
+            if f.get("merge") or _is_youtube(f.get("url", "")):
+                path, tmp = _merged(f["url"], f.get("format") or "video")
                 try:
                     zf.write(path, name)
                 finally:

@@ -57,10 +57,10 @@
 <body>
 <main>
   <h1>Insta Grabber</h1>
-  <p class="sub">Paste an Instagram post or reel link, pick the media you want, and download.</p>
+  <p class="sub">Paste an Instagram post, Reddit post or YouTube video link, pick the media you want, and download.</p>
 
   <form id="form">
-    <input id="url" type="url" required placeholder="https://www.instagram.com/p/…" autocomplete="off">
+    <input id="url" type="url" required placeholder="https://www.instagram.com/p/… or youtube.com/watch?v=…" autocomplete="off">
     <button id="go" type="submit">Fetch</button>
   </form>
   <div id="status" class="status"></div>
@@ -82,7 +82,9 @@ let post = null;
 const selected = new Set();
 
 const fileUrl = (item, inline) =>
-  `/api/file?url=${encodeURIComponent(inline ? item.thumbnail : item.url)}&name=${encodeURIComponent(item.filename)}${inline ? "&inline=1" : ""}`;
+  `/api/file?url=${encodeURIComponent(inline ? item.thumbnail : item.url)}&name=${encodeURIComponent(item.filename)}${inline ? "&inline=1" : ""}`
+  + (!inline && item.merge ? "&merge=1" : "")
+  + (!inline && item.format ? `&format=${encodeURIComponent(item.format)}` : "");
 
 function setStatus(msg, isError = false) {
   $("status").textContent = msg;
@@ -99,7 +101,7 @@ function refresh() {
 }
 
 function render() {
-  $("user").textContent = post.username ? "@" + post.username : "";
+  $("user").textContent = post.label || (post.username ? "@" + post.username : "");
   $("caption").textContent = post.caption || "";
   $("grid").innerHTML = "";
   post.items.forEach((item, i) => {
@@ -109,7 +111,7 @@ function render() {
     card.innerHTML = `
       <img loading="lazy" alt="">
       <span class="check">✓</span>
-      <span class="badge">${item.type === "video" ? "▶ Video" : "Photo"}</span>
+      <span class="badge">${item.kind ? item.kind : item.type === "video" ? "▶ Video" : item.type === "audio" ? "♪ Audio" : "Photo"}</span>
       <a class="one" title="Download just this one">↓</a>`;
     card.querySelector("img").src = item.thumbnail ? fileUrl(item, true) : "";
     const a = card.querySelector("a.one");
