@@ -1,11 +1,11 @@
 FROM python:3.12-slim
 
-# The Instagram, Reddit and YouTube downloader behind the search bar's "down"
+# The Instagram, Reddit, YouTube and Vimeo downloader behind the search bar's "down"
 # button. nginx proxies /down/ to it; it is not published on its own. Unlike
 # the api it has to reach the internet — the three sites and their CDNs — which
 # is the whole job.
 #
-# ffmpeg merges Reddit and YouTube videos, whose picture and sound are separate
+# ffmpeg merges Reddit, YouTube and Vimeo videos, whose picture and sound are separate
 # streams. deno runs yt-dlp's solver for YouTube's player challenges; without a
 # JavaScript runtime YouTube withholds most formats and throttles the rest.
 ARG DENO_VERSION=2.9.8
@@ -21,14 +21,15 @@ RUN apt-get update \
 
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r /app/requirements.txt
-COPY app.py reddit.py youtube.py /app/
+COPY app.py reddit.py youtube.py vimeo.py /app/
 
 USER app
 WORKDIR /app
 # The cookie files are optional; see down/README.md for when they are needed.
 # DENO_DIR: the root filesystem is read-only, so deno's cache goes on the tmpfs.
 ENV IG_COOKIES=/data/cookies.txt REDDIT_COOKIES=/data/reddit-cookies.txt \
-    YT_COOKIES=/data/youtube-cookies.txt DENO_DIR=/tmp/deno \
+    YT_COOKIES=/data/youtube-cookies.txt VIMEO_COOKIES=/data/vimeo-cookies.txt \
+    DENO_DIR=/tmp/deno \
     PYTHONUNBUFFERED=1
 EXPOSE 5000
 

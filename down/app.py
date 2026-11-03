@@ -1,4 +1,4 @@
-"""Instagram, Reddit and YouTube media downloader: paste a link, pick media, download."""
+"""Instagram, Reddit, YouTube and Vimeo media downloader: paste a link, pick media, download."""
 import io
 import os
 import re
@@ -11,19 +11,31 @@ import requests
 from flask import Flask, Response, abort, jsonify, request, send_from_directory
 from werkzeug.exceptions import HTTPException
 from yt_dlp import YoutubeDL
+from yt_dlp.cookies import YoutubeDLCookieJar
 from yt_dlp.extractor.instagram import InstagramIE
 
 import reddit
+import vimeo
 import youtube
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIES = os.environ.get("IG_COOKIES", os.path.join(BASE_DIR, "cookies.txt"))
 REDDIT_COOKIES = os.environ.get("REDDIT_COOKIES", os.path.join(BASE_DIR, "reddit-cookies.txt"))
 YT_COOKIES = os.environ.get("YT_COOKIES", os.path.join(BASE_DIR, "youtube-cookies.txt"))
+VIMEO_COOKIES = os.environ.get("VIMEO_COOKIES", os.path.join(BASE_DIR, "vimeo-cookies.txt"))
+# The cookie file each site reads, by the name the panel and /api/cookies use,
+# and the domain a pasted export must contain cookies for to be accepted.
+COOKIE_FILES = {"instagram": COOKIES, "reddit": REDDIT_COOKIES, "youtube": YT_COOKIES,
+                "vimeo": VIMEO_COOKIES}
+COOKIE_DOMAINS = {"instagram": "instagram.com", "reddit": "reddit.com", "youtube": "youtube.com",
+                  "vimeo": "vimeo.com"}
+MAX_COOKIES_BYTES = 256 * 1024
 # What /api/file will fetch: the CDNs that serve media and thumbnails, plus the
-# YouTube watch URLs that merged downloads hand to yt-dlp.
-ALLOWED_HOST_SUFFIXES = (".cdninstagram.com", ".fbcdn.net", ".redd.it", ".ytimg.com")
-ALLOWED_HOSTS = ("youtube.com", "www.youtube.com", "youtu.be")
+# YouTube and Vimeo page URLs that merged downloads hand to yt-dlp.
+ALLOWED_HOST_SUFFIXES = (".cdninstagram.com", ".fbcdn.net", ".redd.it", ".ytimg.com", ".vimeocdn.com")
+YOUTUBE_HOSTS = ("youtube.com", "www.youtube.com", "youtu.be")
+# Page URLs only yt-dlp may fetch (merge=1), never proxied as a file.
+ALLOWED_HOSTS = YOUTUBE_HOSTS + vimeo.HOSTS
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 
 # yt-dlp format selectors a merged download may ask for, by key. Reddit's DASH
@@ -76,6 +88,11 @@ def _media_items(product_info):
 def fetch_post(url):
     opts = {"quiet": True, "no_warnings": True}
     if os.path.isfile(COOKIES):
+        # yt-dlp writes the jar back to this file when it closes, with whatever
+        # Instagram's answer changed: refreshed tokens, or a session it rejected
+        # dropped. So the folder has to be writable (a read-only mount fails the
+        # request at exit), and a "may be expired" after a paste means the site
+        # threw the session out.
         opts["cookiefile"] = COOKIES
     with YoutubeDL(opts) as ydl:
         ie = CapturingInstagramIE(ydl)
@@ -102,19 +119,27 @@ def _check_cdn_url(url):
     host = _host(url)
     if urlparse(url).scheme != "https" or not (
             host in ALLOWED_HOSTS or host.endswith(ALLOWED_HOST_SUFFIXES)):
-        abort(400, "Only Instagram, Reddit and YouTube URLs are allowed.")
+        abort(400, "Only Instagram, Reddit, YouTube and Vimeo URLs are allowed.")
 
 
-def _is_youtube(url):
+def _is_page_url(url):
+    """A YouTube or Vimeo page: yt-dlp fetches it on merge; it is never proxied as a file."""
     return _host(url) in ALLOWED_HOSTS
+
+
+def _page_cookies(url):
+    """The cookie file for a page URL's site, if there is one."""
+    host = _host(url)
+    path = YT_COOKIES if host in YOUTUBE_HOSTS else VIMEO_COOKIES if host in vimeo.HOSTS else None
+    return path if path and os.path.isfile(path) else None
 
 
 def _merged(url, fmt="video"):
     """Download the best streams for `fmt` (a FORMATS key), merged into one file.
 
-    Reddit videos and every YouTube download come through here: their picture
-    and sound are separate streams, and YouTube's media URLs are bound to the
-    IP that fetched them, so yt-dlp does the fetching on the user's behalf.
+    Reddit videos and every YouTube and Vimeo download come through here: their
+    picture and sound are separate streams, and YouTube's media URLs are bound
+    to the IP that fetched them, so yt-dlp does the fetching on the user's behalf.
     Returns (path, tmpdir); the caller removes tmpdir when done with the file.
     """
     if fmt not in FORMATS:
@@ -125,8 +150,8 @@ def _merged(url, fmt="video"):
             "outtmpl": os.path.join(tmp, "media.%(ext)s")}
     if fmt == "audio":
         opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "m4a"}]
-    if _is_youtube(url) and os.path.isfile(YT_COOKIES):
-        opts["cookiefile"] = YT_COOKIES
+    if _page_cookies(url):
+        opts["cookiefile"] = _page_cookies(url)
     try:
         with YoutubeDL(opts) as ydl:
             ydl.download([url])
@@ -159,6 +184,15 @@ def _clean_error(e):
     return re.sub(r"^\[[\w:]+\] \S+: ", "", msg)
 
 
+def _cookie_error(site, blurb):
+    """A 502 that names the site whose cookies would help, so the panel can offer its paste box."""
+    path = COOKIE_FILES[site]
+    hint = (f"Your {os.path.basename(path)} may be expired; paste a fresh export."
+            if os.path.isfile(path) else
+            f"Paste cookies exported from a browser that is logged in to {site.capitalize()}.")
+    return jsonify(error=f"{blurb} {hint}", cookies=site), 502
+
+
 @app.get("/")
 def index():
     return send_from_directory(os.path.join(BASE_DIR, "static"), "index.html")
@@ -171,6 +205,8 @@ def info():
         try:
             return jsonify(reddit.fetch_post(url, REDDIT_COOKIES))
         except reddit.RedditError as e:
+            if e.needs_cookies:
+                return _cookie_error("reddit", str(e))
             return jsonify(error=str(e)), 502
         except Exception as e:
             return jsonify(error=f"Reddit: {e}"), 502
@@ -182,23 +218,95 @@ def info():
         except Exception as e:
             msg = _clean_error(e)
             if re.search(r"sign in|cookies|bot", msg, re.I):
-                msg = ("YouTube wants the server to sign in before serving this video. "
-                       + ("Your youtube-cookies.txt may be expired; re-export it." if os.path.isfile(YT_COOKIES)
-                          else "Add a youtube-cookies.txt from a logged-in browser (see down/README.md)."))
+                return _cookie_error("youtube", "YouTube wants the server to sign in before serving this video.")
             return jsonify(error=f"YouTube: {msg}"), 502
     if youtube.is_youtube(url):
         return jsonify(error="That's a YouTube playlist, channel or page link; paste a link to one video."), 400
+    if vimeo.suitable(url):
+        try:
+            return jsonify(vimeo.fetch_post(url, VIMEO_COOKIES))
+        except vimeo.VimeoError as e:
+            return jsonify(error=str(e)), 502
+        except Exception as e:
+            msg = _clean_error(e)
+            if re.search(r"logged-in|login|cookies|password", msg, re.I):
+                return _cookie_error("vimeo", "Vimeo only serves videos to a logged-in account.")
+            if "No video formats found" in msg:
+                # The API answered, but without play or files: the account can't
+                # view it (privacy settings), or the session isn't a real login.
+                msg = "Vimeo listed this video without any playable files (its privacy settings, or your account can't view it)."
+            return jsonify(error=f"Vimeo: {msg}"), 502
+    if vimeo.is_vimeo(url):
+        return jsonify(error="That's a Vimeo showcase, channel or page link; paste a link to one video."), 400
     if not InstagramIE.suitable(url):
-        return jsonify(error="That doesn't look like an Instagram, Reddit or YouTube link."), 400
+        return jsonify(error="That doesn't look like an Instagram, Reddit, YouTube or Vimeo link."), 400
     try:
         return jsonify(fetch_post(url))
     except Exception as e:  # yt-dlp raises many error types; surface the message
         msg = _clean_error(e)
-        if re.search(r"cookies|login|rate-limit|empty media response", msg, re.I):
-            msg = ("Instagram wouldn't serve this post anonymously (private post or rate limit). "
-                   + ("Your cookies.txt may be expired; re-export it." if os.path.isfile(COOKIES)
-                      else "Add a cookies.txt from a logged-in browser (see down/README.md)."))
+        if re.search(r"cookies|login|rate-limit|empty media response|available to everyone", msg, re.I):
+            return _cookie_error("instagram", "Instagram wouldn't serve this post anonymously "
+                                 "(private or restricted post, or rate limit).")
         return jsonify(error=msg), 502
+
+
+@app.errorhandler(HTTPException)
+def _json_errors(e):
+    """The panel reads /api/cookies answers as JSON; the other routes keep Flask's HTML pages."""
+    if request.path == "/api/cookies":
+        return jsonify(error=e.description), e.code
+    return e
+
+
+@app.post("/api/cookies")
+def cookies():
+    """Save a pasted Netscape cookies.txt as one site's cookie file.
+
+    The page cannot read another origin's cookies, so the user exports them with
+    a browser extension and pastes the text here; that beats copying a file onto
+    the docker host by hand. The text is checked the way the fetchers will read
+    it (yt-dlp's jar, which also takes the #HttpOnly_ lines the extensions
+    write), must hold at least one cookie for the site, and lands in place with a
+    rename, so a request in flight never sees a half-written file.
+    """
+    body = request.get_json(silent=True) or {}
+    site = body.get("site")
+    text = body.get("text")
+    if site not in COOKIE_FILES or not isinstance(text, str):
+        abort(400, "Expected a site and the cookie text.")
+    text = text.strip()
+    if not text:
+        abort(400, "Paste the exported cookies first.")
+    if len(text) > MAX_COOKIES_BYTES:
+        abort(400, "That's too big to be a cookies.txt.")
+    if not re.match(r"#( Netscape)? HTTP Cookie File", text):
+        # The jar insists on the magic header; an export pasted without it is still fine.
+        text = "# Netscape HTTP Cookie File\n" + text
+    path = COOKIE_FILES[site]
+    folder = os.path.dirname(path) or "."
+    try:
+        fd, tmp = tempfile.mkstemp(prefix=".cookies-", dir=folder)
+    except OSError:
+        abort(500, f"The server cannot write to {folder}. On the docker host, run: "
+                   f"mkdir -p down/data && chown 10002 down/data")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+        jar = YoutubeDLCookieJar(tmp)
+        try:
+            jar.load(ignore_discard=True, ignore_expires=True)
+        except Exception as e:
+            abort(400, f"That doesn't parse as a Netscape cookies.txt ({_clean_error(e)}). "
+                       "Use the extension's Copy button and paste everything it gives you.")
+        domain = COOKIE_DOMAINS[site]
+        n = sum(1 for c in jar if c.domain.lstrip(".").endswith(domain))
+        if not n:
+            abort(400, f"No cookies for {domain} in that text. Export from a tab that is on {domain}.")
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    return jsonify(saved=site, cookies=n)
 
 
 @app.get("/api/file")
@@ -219,8 +327,8 @@ def file():
             "Content-Disposition": f'attachment; filename="{name}"',
             "Content-Length": str(os.path.getsize(path)),
         })
-    if _is_youtube(url):
-        abort(400, "YouTube downloads go through merge=1.")
+    if _is_page_url(url):
+        abort(400, "YouTube and Vimeo downloads go through merge=1.")
     upstream = requests.get(url, stream=True, timeout=30, headers={"User-Agent": UA})
     if upstream.status_code != 200:
         abort(502, f"The CDN returned {upstream.status_code}")

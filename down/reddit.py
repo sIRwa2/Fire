@@ -28,7 +28,9 @@ EXT = {"image/jpg": "jpg", "image/jpeg": "jpg", "image/png": "png",
 
 
 class RedditError(Exception):
-    pass
+    def __init__(self, msg, needs_cookies=False):
+        super().__init__(msg)
+        self.needs_cookies = needs_cookies
 
 
 def suitable(url):
@@ -143,10 +145,8 @@ def fetch_post(url, cookies=None):
     pid = _post_id(s, url)
     r = s.get(f"https://www.reddit.com/comments/{pid}.json", params={"raw_json": 1}, timeout=20)
     if r.status_code in (401, 403, 429) or "json" not in r.headers.get("Content-Type", ""):
-        raise RedditError(
-            "Reddit wouldn't serve this post to the server (blocked or rate limited). "
-            + ("Your reddit-cookies.txt may be expired; re-export it." if cookies and os.path.isfile(cookies)
-               else "Add a reddit-cookies.txt from a logged-in browser (see down/README.md)."))
+        raise RedditError("Reddit wouldn't serve this post to the server (blocked or rate limited).",
+                          needs_cookies=True)
     if r.status_code == 404:
         raise RedditError("That Reddit post doesn't exist, or was removed.")
     r.raise_for_status()

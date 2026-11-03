@@ -49,18 +49,20 @@ services:
     tmpfs:
       - /tmp
 
-  # Instagram, Reddit and YouTube downloader for the search bar's "down"
+  # Instagram, Reddit, YouTube and Vimeo downloader for the search bar's "down"
   # button. Not published — nginx proxies /down/ to it. Needs outbound internet
-  # to reach the sites. Drop a cookies.txt (Instagram), reddit-cookies.txt or
-  # youtube-cookies.txt into ./down/data to download as a logged-in user; see
-  # down/README.md.
+  # to reach the sites. Login cookies live in ./down/data: the panel saves what
+  # you paste into it there (so the folder is writable, and must be owned by the
+  # service's uid 10002: mkdir -p down/data && chown 10002 down/data), or drop a
+  # cookies.txt (Instagram), reddit-cookies.txt, youtube-cookies.txt or
+  # vimeo-cookies.txt in by hand; see down/README.md.
   down:
     build: ./down
     image: firehome-down:local
     container_name: firehome-down
     restart: unless-stopped
     volumes:
-      - ./down/data:/data:ro
+      - ./down/data:/data
     security_opt:
       - no-new-privileges:true
     cap_drop:

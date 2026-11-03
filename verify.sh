@@ -259,6 +259,30 @@ if have docker; then
     fi
 fi
 
+echo "== down =="
+# The paste box in the panel writes the cookie file through this route; a
+# refused body must come back as JSON (the panel shows the message) rather than
+# Flask's HTML page.
+check "the down service answers" 200 "$(code /down/)"
+junk=$(curl -s -w '\n%{http_code}' -X POST "$BASE/down/api/cookies" \
+    -H 'Content-Type: application/json' -d '{}')
+check "the cookie route refuses junk" 400 "$(printf '%s' "$junk" | tail -1)"
+if printf '%s' "$junk" | head -1 | grep -q '^{"error"'; then
+    ok "the cookie route answers with JSON"
+else
+    bad "the cookie route answers with JSON" "$(printf '%s' "$junk" | head -1 | cut -c1-80)"
+fi
+# Bind-mounted ./down/data comes out root-owned when compose creates it, and the
+# service runs as uid 10002: then every save fails and the panel says so.
+if have docker; then
+    if $COMPOSE exec -T down sh -c 'test -d /data && test -w /data' 2>/dev/null; then
+        ok "the cookie folder is writable by the down service"
+    else
+        bad "the cookie folder is writable by the down service" \
+            "on the host: mkdir -p down/data && chown 10002 down/data"
+    fi
+fi
+
 echo
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1

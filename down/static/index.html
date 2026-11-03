@@ -29,6 +29,13 @@
   button:disabled { opacity: .5; cursor: default; }
   .status { margin: 16px 0 0; color: var(--muted); min-height: 1.5em; }
   .status.error { color: var(--error); }
+  .cookies { margin-top: 12px; }
+  .cookies p { margin: 0 0 8px; color: var(--muted); font-size: .9rem; }
+  .cookies a { color: var(--text); }
+  .cookies textarea { display: block; width: 100%; box-sizing: border-box; resize: vertical; padding: 10px 12px;
+                      margin-bottom: 8px; color: inherit; background: var(--surface); border: 1px solid var(--border);
+                      border-radius: 10px; font: .8rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .cookies textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .meta { margin: 24px 0 12px; }
   .meta strong { display: block; }
   .meta p { margin: 4px 0 0; color: var(--muted); font-size: .9rem; white-space: pre-line;
@@ -57,13 +64,20 @@
 <body>
 <main>
   <h1>Insta Grabber</h1>
-  <p class="sub">Paste an Instagram post, Reddit post or YouTube video link, pick the media you want, and download.</p>
+  <p class="sub">Paste an Instagram post, Reddit post, YouTube or Vimeo video link, pick the media you want, and download.</p>
 
   <form id="form">
     <input id="url" type="url" required placeholder="https://www.instagram.com/p/… or youtube.com/watch?v=…" autocomplete="off">
     <button id="go" type="submit">Fetch</button>
   </form>
   <div id="status" class="status"></div>
+  <section id="cookies" class="cookies" hidden>
+    <p>In the tab where you are logged in to <span id="cookieSite"></span>, open the
+      <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" rel="noopener">Get cookies.txt LOCALLY</a>
+      extension, press Copy, paste it here and save.</p>
+    <textarea id="cookieText" rows="4" spellcheck="false" placeholder="# Netscape HTTP Cookie File …"></textarea>
+    <button type="button" id="saveCookies" class="ghost">Save cookies and retry</button>
+  </section>
 
   <section id="result" hidden>
     <div class="meta"><strong id="user"></strong><p id="caption"></p></div>
@@ -138,6 +152,11 @@ $("form").addEventListener("submit", async e => {
       body: JSON.stringify({ url: $("url").value })
     });
     const data = await res.json();
+    $("cookies").hidden = !(!res.ok && data.cookies);
+    if (data.cookies) {
+      $("cookies").dataset.site = data.cookies;
+      $("cookieSite").textContent = { instagram: "Instagram", reddit: "Reddit", youtube: "YouTube", vimeo: "Vimeo" }[data.cookies];
+    }
     if (!res.ok) throw new Error(data.error || "Request failed");
     if (!data.items.length) throw new Error("No downloadable media found in this post.");
     post = data;
@@ -149,6 +168,28 @@ $("form").addEventListener("submit", async e => {
     setStatus(err.message, true);
   } finally {
     $("go").disabled = false;
+  }
+});
+
+$("saveCookies").addEventListener("click", async () => {
+  const text = $("cookieText").value.trim();
+  if (!text) { setStatus("Paste the exported cookies first.", true); return; }
+  $("saveCookies").disabled = true;
+  setStatus("Saving cookies…");
+  try {
+    const res = await fetch("/api/cookies", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ site: $("cookies").dataset.site, text })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Saving the cookies failed");
+    $("cookieText").value = "";
+    $("cookies").hidden = true;
+    $("form").requestSubmit();
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    $("saveCookies").disabled = false;
   }
 });
 

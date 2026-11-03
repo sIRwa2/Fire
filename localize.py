@@ -2650,13 +2650,15 @@ EXAMPLE_PATCHES = tuple(
 )
 
 
-# ── Instagram, Reddit and YouTube downloads from the search bar ─────────────
+# ── Instagram, Reddit, YouTube and Vimeo downloads from the search bar ──────
 # A "down" button sits inside the search field. Paste an Instagram post, reel or
-# TV link, a Reddit post or share link, or a YouTube video or short, press it,
+# TV link, a Reddit post or share link, a YouTube video or short, or a Vimeo
+# video, press it,
 # and the media shows up in a panel between the bar and the header, each tile a
 # download link, plus a zip of the lot for a carousel. A YouTube video gets a
 # tile per choice: the video (up to 1080p, and the full size when there is
-# more) and the audio on its own.
+# more) and the audio on its own; a Vimeo video the same, and it always needs
+# the cookies below, since Vimeo's API only answers a logged-in client.
 #
 # The fetching is done by the down service (down/app.py, yt-dlp), which nginx
 # proxies at /down/ on the same origin. That is what keeps the CSP closed: the
@@ -2674,6 +2676,15 @@ EXAMPLE_PATCHES = tuple(
 # Every request carries a ticket. Closing the panel or pressing down again
 # bumps it, so a slow answer for a link the user has moved on from is dropped
 # instead of reopening the panel.
+#
+# When a site refuses the server (a private or restricted post, a bot check, a
+# rate limit), the answer names the site whose login cookies would get past it,
+# and the error grows a paste box. The page cannot read another origin's
+# cookies, so the user exports them from the logged-in tab with a "Get
+# cookies.txt LOCALLY" style extension (its Copy button puts the Netscape text
+# on the clipboard), pastes, and saves: the service writes the file and the
+# panel fetches the link again. That replaces copying a file onto the docker
+# host by hand; the extension is the only part that cannot be taken away.
 #
 # The button is type="button": a plain button in a form is a submit button, and
 # pressing it would run the web search for the pasted URL as well.
@@ -2708,6 +2719,16 @@ DOWN_CSS = (
     "line-height:1;padding:0 4px;cursor:pointer;font-family:inherit}"
     ".hdr-dl-x:hover{color:#f2f4f6}"
     ".hdr-dl-err{margin-top:8px;font-size:12.5px;color:#e08a8a}"
+    ".hdr-dl-ck{margin-top:10px}"
+    ".hdr-dl-ck-how{margin:0 0 8px;font-size:12.5px;color:#9aa3ad}"
+    ".hdr-dl-ck-how a{color:#dfe3e8}"
+    ".hdr-dl-ck textarea{display:block;width:100%;box-sizing:border-box;"
+    "resize:vertical;padding:8px 10px;border-radius:6px;"
+    "border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.25);"
+    "color:#dfe3e8;font:11.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;"
+    "outline:none}"
+    ".hdr-dl-ck textarea:focus{border-color:var(--accent)}"
+    ".hdr-dl-ck .hdr-dl-btn{margin-top:8px}"
     ".hdr-dl-grid{display:grid;"
     "grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;"
     "margin-top:12px}"
@@ -2740,7 +2761,7 @@ DOWN_PATCHES = tuple(
     this.closeSuggest();
     const ticket = this._downTicket = (this._downTicket || 0) + 1;
     if (!url) {
-      this.setState({ down: { error: 'Paste an Instagram, Reddit or YouTube link first.' } });
+      this.setState({ down: { error: 'Paste an Instagram, Reddit, YouTube or Vimeo link first.' } });
       return;
     }
     this.setState({ down: { busy: 'Fetching post…' } });
@@ -2752,7 +2773,11 @@ DOWN_PATCHES = tuple(
       d: { error: 'The download service did not answer (' + r.status + ').' } })))
       .then(({ ok, d }) => {
         if (ticket !== this._downTicket) return;
-        if (!ok) throw new Error(d.error || 'Request failed.');
+        if (!ok) {
+          const e = new Error(d.error || 'Request failed.');
+          e.cookies = d.cookies || null;
+          throw e;
+        }
         if (!d.items || !d.items.length) throw new Error('No downloadable media in this post.');
         this.setState({ down: { post: d } });
       })
@@ -2760,7 +2785,43 @@ DOWN_PATCHES = tuple(
         if (ticket !== this._downTicket) return;
         const msg = err instanceof TypeError
           ? 'Could not reach the download service.' : err.message;
-        this.setState({ down: { error: msg } });
+        this.setState({ down: { error: msg, cookies: err.cookies || null } });
+      });
+  };
+  // The box is controlled (its value is state), so the pasted text survives
+  // the re-renders the header's hover and focus changes cause.
+  cookieInput = (e) => {
+    const d = this.state.down;
+    if (d && d.cookies) this.setState({ down: Object.assign({}, d, { text: e.target.value }) });
+  };
+  saveCookies = () => {
+    const d = this.state.down;
+    if (!d || !d.cookies || d.saving) return;
+    const site = d.cookies;
+    const text = (d.text || '').trim();
+    if (!text) {
+      this.setState({ down: { error: 'Paste the exported cookies first.', cookies: site } });
+      return;
+    }
+    const ticket = this._downTicket;
+    this.setState({ down: { error: d.error, cookies: site, saving: true, text } });
+    fetch('""" + DOWN_BASE + """/api/cookies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site, text })
+    }).then(r => r.json().then(j => ({ ok: r.ok, j }), () => ({ ok: false,
+      j: { error: 'The download service did not answer (' + r.status + ').' } })))
+      .then(({ ok, j }) => {
+        if (ticket !== this._downTicket) return;
+        if (!ok) throw new Error(j.error || 'Saving the cookies failed.');
+        // Saved: fetch the link again, now as the logged-in user.
+        this.runDown();
+      })
+      .catch(err => {
+        if (ticket !== this._downTicket) return;
+        const msg = err instanceof TypeError
+          ? 'Could not reach the download service.' : err.message;
+        this.setState({ down: { error: msg, cookies: site, text } });
       });
   };
   closeDown = () => {
@@ -2813,6 +2874,13 @@ DOWN_PATCHES = tuple(
         : 'Download',
       downHasError: !!(s.down && s.down.error),
       downError: (s.down && s.down.error) || '',
+      downNeedsCookies: !!(s.down && s.down.cookies),
+      downCookieSite: { instagram: 'Instagram', reddit: 'Reddit', youtube: 'YouTube', vimeo: 'Vimeo' }[
+        (s.down && s.down.cookies) || ''] || '',
+      downCookieText: (s.down && s.down.text) || '',
+      downCookieLabel: s.down && s.down.saving ? 'Saving…' : 'Save cookies and retry',
+      saveCookies: this.saveCookies,
+      cookieInput: this.cookieInput,
       downHasPost: !!(s.down && s.down.post),
       downMulti: !!(s.down && s.down.post && s.down.post.items.length > 1),
       downZipLabel: s.down && s.down.zipping ? 'Zipping…' : 'Download all (.zip)',
@@ -2831,7 +2899,7 @@ DOWN_PATCHES = tuple(
             'sc-camel-on-blur="{{ closeSuggest }}">',
             'sc-camel-on-blur="{{ closeSuggest }}">'
             '<button type="button" class="hdr-down" '
-            'title="Download the Instagram, Reddit or YouTube link in the search field" '
+            'title="Download the Instagram, Reddit, YouTube or Vimeo link in the search field" '
             'sc-camel-on-click="{{ runDown }}">down</button>',
         ),
         (
@@ -2853,6 +2921,19 @@ DOWN_PATCHES = tuple(
             '<sc-if value="{{ downHasError }}" hint-placeholder-val="{{ false }}">'
             '<div class="hdr-dl-err">{{ downError }}</div>'
             "</sc-if>"
+            '<sc-if value="{{ downNeedsCookies }}" hint-placeholder-val="{{ false }}">'
+            '<div class="hdr-dl-ck">'
+            '<p class="hdr-dl-ck-how">In the tab where you are logged in to '
+            '{{ downCookieSite }}, open the '
+            '<a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/'
+            'cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" rel="noopener">'
+            'Get cookies.txt LOCALLY</a> extension, press Copy, paste it here and save.</p>'
+            '<textarea rows="3" spellcheck="false" autocomplete="off" '
+            'placeholder="# Netscape HTTP Cookie File&#10;.instagram.com&#9;TRUE&#9;/&#9;TRUE&#9;…" '
+            'value="{{ downCookieText }}" sc-camel-on-input="{{ cookieInput }}"></textarea>'
+            '<button type="button" class="hdr-dl-btn" '
+            'sc-camel-on-click="{{ saveCookies }}">{{ downCookieLabel }}</button>'
+            "</div></sc-if>"
             '<sc-if value="{{ downHasPost }}" hint-placeholder-val="{{ false }}">'
             '<div class="hdr-dl-grid">'
             '<sc-for list="{{ downItems }}" as="it" hint-placeholder-count="3">'
