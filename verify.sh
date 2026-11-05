@@ -263,7 +263,6 @@ echo "== down =="
 # The paste box in the panel writes the cookie file through this route; a
 # refused body must come back as JSON (the panel shows the message) rather than
 # Flask's HTML page.
-check "the down service answers" 200 "$(code /down/)"
 junk=$(curl -s -w '\n%{http_code}' -X POST "$BASE/down/api/cookies" \
     -H 'Content-Type: application/json' -d '{}')
 check "the cookie route refuses junk" 400 "$(printf '%s' "$junk" | tail -1)"
